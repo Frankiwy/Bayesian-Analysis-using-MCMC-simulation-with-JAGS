@@ -1,0 +1,482 @@
+---
+title: "Bayesian Analysis using MCMC simulation with JAGS"
+author: "Francesco Romeo"
+date: "March 2021"
+output:
+  html_document:
+    highlight: pygments
+    code_folding: show
+    toc: yes
+    toc_float: yes
+---
+
+<style type="text/css">
+h1.title {
+  font-size: 60px;
+  color: Navy;
+  text-align: center;
+  font-weight: bold;
+}
+h4.author { 
+  font-size: 18px;
+  #font-family: "Times New Roman", Times, serif;
+  color: Black;
+  text-align: left;
+  font-weight: bold;
+}
+h4.date { 
+  font-size: 18px;
+  #font-family: "Times New Roman", Times, serif;
+  color: Black;
+  text-align: left;
+  font-weight: bold;
+}
+</style>
+
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+pre[class] {
+  max-height: 300px;
+}
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## <span style="color: purple;"> 0) Useful libraries & functions</span>
+
+In this preliminary section have been reported all the used external libraries and some useful functions used to accomplish the outbreak.
+
+```{r include=TRUE, message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(R2jags)
+library(bayesplot)
+library(TeachingDemos)
+library(kableExtra)
+library(gridExtra)
+```
+
+The __fix.NA()__ function is the function used to perform a pre-processing on the acquired data. It takes in input 3 variables:
+
+* _dataset_ = is the dataframe to be "cleaned"
+
+* _first_ = is the column on which NAs values as to be searched and approximated
+
+* _second_ = it is an optional variable used to infer the _first_ variable if they are correlated.
+```{r include=TRUE, message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
+fix.NA <- function(dataset,first,second=NA){
+  candidate <- which(is.na(dataset[first])) # get vector of positions
+  delete <- c()
+  if (!is.na(second)) { # if second column is passed
+    for (elm in candidate){ # iterate over all the found values
+      sec <- dataset[second][elm,]
+      baseline <- dataset$total_cases[elm]
+      if (!is.na(sec)){ # if the second element is not NA
+        new_v <- round(abs(dataset$total_cases[elm] - dataset[second][elm,]),0)
+        if ((!is.na(new_v)) & (baseline >= new_v )) dataset[first][elm,] <- new_v # substitute the new value
+        else delete <- c(delete, elm) # elm to be deleted 
+      }
+      
+      else { # if it is... than compute the value using the median
+        get_prov <- dataset$province[elm] # find the prov to use as groupby value
+        new_v <- round(mean(c(
+          dataset[first][which(dataset$province==get_prov),]
+          )[[1]],na.rm=T),0) # get the median value 
+        if ((!is.na(baseline)) & (dataset$total_cases[elm] >= new_v )) dataset[first][elm,] <- new_v # substitute the new value
+        else delete <- c(delete, elm) # elm to be deleted
+      }
+    }
+    print(paste('Warning: ',(length(candidate)-length(delete)),' values have been approximated & ',
+                length(delete),' have been candidated...'))
+    dataset <- dataset[-delete,] # candidate values
+
+  }
+  else {
+    dataset <- dataset[-candidate,] # candidate values 
+    print(paste('Warning: ',length(candidate),' values have been deleted...'))
+  }
+  return(dataset)
+}
+```
+
+
+The __saving()__ function is used to save the images. It takes in input 4 parameters:
+
+* _name_ = the name of the image,
+
+* _the.figure_ = the object to be saved,
+
+* _w_ = is used to customize the width of the image,
+
+* _h_ = is used to customize the height of the image. 
+```{r include=TRUE, message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
+saving <- function(name,the.figure,w,h){
+  png(filename=name, width = w, height = h) # open image
+  plot(the.figure)
+  dev.off() # close and save image
+}
+```
+
+## <span style="color: purple;"> 1)  Dateset Desciption </span>
+
+```{r include=TRUE, message=FALSE, eval=TRUE, results='hide', class.source="bg-success", warning=FALSE}
+dir.create("images", showWarnings = TRUE) # directory to images
+#import the dataset
+ebola_congo <- (read_csv("dataset/ebola_congo.csv",
+                    col_types = cols(`publication_date` = col_skip(),
+                                     `source` = col_skip(), 
+                                     `report_date` = col_skip(),
+                                     `country` = col_skip(), 
+                                     `confirmed_cases` = col_skip(),
+                                     `probable_cases` = col_skip(),
+                                     `new_cured` = col_skip(),
+                                     `confirmed_deaths` = col_skip(), 
+                                     `new_deaths` = col_skip(),
+                                     `old_suspected_cases` = col_skip(),
+                                     `total_suspected_cases` = col_skip(), 
+                                     `new_suspected_cases` = col_skip(), 
+                                     `confirmed_cases_change` = col_skip(),
+                                     `probable_cases_change` = col_skip(),
+                                     `total_cases_change` = col_skip(),
+                                     `confirmed_deaths_change` = col_skip(),
+                                     `total_deaths_change` = col_skip(),
+                                     `total_suspected_cases_change` = col_skip()
+                                     ))[-1,]) # -1 is used for skip the first line
+
+ebola_congo$province <- as.character(ebola_congo$province)
+ebola_congo$total_cases <- as.numeric(as.character(ebola_congo$total_cases))
+ebola_congo$total_deaths <- as.numeric(as.character(ebola_congo$total_deaths))
+ebola_congo$total_cured <- as.numeric(as.character(ebola_congo$total_cured))
+
+
+ebola_congo <- fix.NA(ebola_congo,'total_deaths','total_cured')
+
+congo <- ebola_congo %>% group_by(health_zone) %>% 
+  summarize(province=first(province), total_cases=sum(total_cases),
+            total_deaths=sum(total_deaths), total_cured=total_cases-total_deaths) # groupy by health_zones
+
+congo <- congo[c(-5,-7,-8,-22,-25,-27),]#delete strange health_zones 
+congo <- congo[congo$total_deaths<=5000,]
+```
+
+
+
+The dataset contains information about Ebola cases occurred in the Democratic Republic of Congo (DRC). The data have been collected by the reported published by DRC Ministry of Health from 22 August 2018 to 22 September 2019. The data are public available on the HUMANITARIAN DATA EXCHANGE (HDX) at the following link: [Ebola Cases and Deaths Outbreak in DRC](https://data.humdata.org/dataset/ebola-cases-and-deaths-drc-north-kivu)) _&_ [DRC Malnutrition](https://data.humdata.org/dataset/prevalence-de-la-malnutrition-en-rdc/resource/5e155c31-4e19-464d-b0bf-30914d43325f) .
+The dataset contains different information about the Ebola epidemic in Congo, however not all the gathered data are useful for the analysis, for that reason some of them have been discarded. In particular the final dataset is composed by the following variables:
+
+* __province__ = it tells us on which macro-area the data come from. There are 3 macro-areas:
+  * _North Kivu_,
+  * _Ituri_,
+  * _South Kivu_.
+
+* __health_zone__ = it gives information about the sub-area. In every macro-area there are different sup-areaS; more precisely:
+  * for _North Kivu_ region there are 9 sup-areaS,
+  * for _Ituri region_ there are 7 sup-areaS,
+  * for _South Kivu_ region there are 1 sup-areaS.
+
+* __total_cases__ = the number of total cases in each sub-area.
+
+* __total_deaths__ = number of total deceases in each sub-area.
+
+* __total_cured__ = number of recovered people.
+
+Summaries of the keept varibles are reported in the table below:
+
+```{r message=FALSE, echo=FALSE, class.source="bg-success", warning=FALSE}
+dat <- data.frame('Var'=c('total cases','total deaths','total cured'),
+                  'Min.'=c(34,0,1), 'Q1.'=c(657, 241, 147), 'Median'=c(1209, 685, 631),
+                  'Mean'=c(2629,1215,1414),'Q3.'=c(5562,1711,1482), 'Max.'=c(8889,4403,7146))
+dat_summary <- dat %>% kbl(caption='Summary table:') %>%
+  kable_material_dark()
+dat_summary
+```
+
+Figure 1 shows a graphic representation of the used data.
+
+The group.colors variable it has been used to manually set the colors of the following histograms
+```{r message=FALSE, eval=FALSE, echo=TRUE, class.source="bg-success", warning=FALSE}
+group.colors <- c('Ituri' = "royalblue3", 
+                  'North Kivu' = "tomato2", 'South Kivu' ="gold1")
+```
+
+```{r include=TRUE, eval=FALSE, class.source="bg-success", warning=FALSE}
+deaths_h <- congo %>% ggplot(aes(x=total_deaths)) +
+  geom_histogram(binwidth=500, fill= 'orchid',colour = 'purple', 
+                 alpha=.6,boundary = 0, closed = "left") +
+  ylim(0,7)+
+  xlim(0, 5000) +
+  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  labs(y=' ') +
+  theme(axis.text.y = element_text(colour='red'),
+        axis.line.y = element_line(size = 1, colour = "red"))
+
+
+deaths_prov <- congo %>% ggplot(aes(x=total_deaths, fill=province)) +
+  geom_histogram(binwidth=500,colour = 'purple', 
+                 alpha=.6,boundary = 0, closed = "right") +
+  scale_fill_manual(values=group.colors) +
+  ylim(0,7)+
+  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  labs(title = 'Total deaths',y=' ') +
+  theme(legend.position = c(.88, 0.65),
+        axis.text.y = element_text(colour='red'),
+        axis.line.y = element_line(size = 1, colour = "red"),
+        plot.title = element_text(hjust = 0.5, size = 14, color = 'purple'))
+
+deaths_d <- congo %>% ggplot(aes(x=total_deaths)) +
+  geom_histogram(aes(y=..density..), binwidth=500,
+                 fill= 'orchid',colour = 'purple', 
+                 alpha=.6,boundary = 0, closed = "left") +
+  xlim(0, 5000) +
+  ylim(0,10e-04)+
+  geom_density(fill='red',alpha=.2,col='violet') +
+  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  labs(y='Densities') +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, color = 'purple'),
+        axis.title.y = element_text(size=12,colour = 'black',face='bold'),
+        axis.line.y = element_line(size = 1, colour = "black"),
+        axis.text.y = element_text(colour='black'))
+
+# Cases Plots
+
+cases_h <- congo %>% ggplot(aes(x=total_cases)) +
+  geom_histogram(binwidth=1000, fill= 'cyan4',colour = 'darkgreen', 
+                 alpha=.6,boundary = 0, closed = "left") +
+  ylim(0,7)+
+  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  labs(y=' ') +
+  theme(axis.text.y = element_text(colour='red'),
+        axis.line.y = element_line(size = 1, colour = "red"))
+
+
+cases_prov <- congo %>% ggplot(aes(x=total_cases, fill=province)) +
+  geom_histogram(binwidth=1000,colour = 'darkgreen', 
+                 alpha=.6,boundary = 0, closed = "right") +
+  scale_fill_manual(values=group.colors) +
+  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  ylim(0,7)+
+  labs(title = 'Total cases',y=' ') +
+  theme(legend.position = c(.88, 0.65),
+        axis.text.y = element_text(colour='red'),
+        axis.line.y = element_line(size = 1, colour = "red"),
+        plot.title = element_text(hjust = 0.5, size = 14, color = 'darkgreen'))
+
+cases_d <- congo %>% ggplot(aes(x=total_cases)) +
+  geom_histogram(aes(y=..density..), binwidth=1000,
+                 fill= 'cyan4',colour = 'darkgreen', 
+                 alpha=.6,boundary = 0, closed = "left") +
+  xlim(0, 5000) +
+  ylim(0,10e-04)+
+  geom_density(fill='green',alpha=.2,col='seagreen1') +
+  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  labs(y=' ') +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, color = 'darkgreen'),
+        axis.line.y = element_line(size = 1, colour = "black"),
+        axis.text.y = element_text(colour='black'))
+```
+
+```{r message=FALSE, include=TRUE, eval=FALSE, class.source="bg-success", warning=FALSE}
+figure <- ggarrange(deaths_prov, cases_prov,
+                    deaths_h, cases_h,
+                    deaths_d, cases_d,
+                    ncol = 2, nrow = 3, align = 'hv')
+
+annotaded_fi <- annotate_figure(figure,
+                bottom = text_grob("Data source: \n https://data.humdata.org/dataset/ebola-cases-and-deaths-drc-north-kivu", color = "blue",
+                                   hjust = 1.01, x = 1, face = "italic", size = 10),
+                left = text_grob("Frequencies", color = "red", size=12,
+                                 rot = 90, face='bold', hjust = -.4, vjust = 2.3),
+                fig.lab = " ", fig.lab.face = "bold")
+
+annotaded_fi
+saving('images/combo.jpg',annotaded_fi,w=900,h=556)
+```
+
+![__Figure 1: Summary Histograms__](images/combo.jpg) 
+
+## <span style="color: purple;"> 2)  Model 1 </span>
+
+In this first model independence among each death probabilities has been assumed among each sub-area. In order to model the outcome, a Binomial distribution has been used. The total number of infected people per each sub area $i$ as been denoted with $n_{i}$. The total number of deceased people is represented by $r_{i}$ which is a binary response variable with "true" probability $p_{i}$. 
+
+\[r_i \sim Binomial(p_i,n_i) \] 
+
+A Beta(1,1) distribution as been used as standard-non-informative prior for $p_{i}$. The Beta distribution is a continuous distribution taking values in the domain 0-1.
+
+\[p_i \sim Beta(1 ,1) \] 
+
+In order to make inference on the $p_{i}$ the model has been written in order to be compatible for JAGS (Just Another Gibbs Sampler).
+
+### <span style="color: CornflowerBlue;"> 2.1)  Prepare the data for JAGS </span>
+
+Since doesn't deal with dataframes it is necessary to store all the required variables into lists.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+n <- congo$total_cases # tries 
+r <- congo$total_deaths # number of success (unfortunately...)
+N <- nrow(congo)
+congo.jags <- list("r", "n", "N")
+```
+
+### <span style="color: CornflowerBlue;"> 2.2) JAGS Model 1 </span>
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+# Model
+model <- function() {
+  for(i in 1:N){
+    p[i] ~ dbeta(1.0, 1.0) # Prior
+    r[i] ~ dbinom(p[i], n[i]) # Model
+  }
+}
+
+# Starting values
+mod.inits = function(){
+  list("p" = rep(0.1,N))
+}
+# Define parameters of interest
+mod.params <- c("p")
+
+# Run JAGS
+set.seed(123)
+mod.fit <- jags(data = congo.jags,                            
+                model.file = model, inits = mod.inits,          
+                parameters.to.save = mod.params,                  
+                n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
+```
+
+
+### <span style="color: CornflowerBlue;"> 2.3) Output & Diagnostic for Model 1 </span>
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mod.fit
+```
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mod.fit$BUGSoutput$summary
+```
+
+One way to check if the MCMC performed on JAGS can be trusted it is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs and then use a traceplos in order inspect sampling behavior and assess mixing across chains and convergence. 
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+chainArray <- mod.fit$BUGSoutput$sims.array # get the chain
+
+mcmc_trace(chainArray)
+```
+
+As can be better seen from the Figure below, the chains lie on top of each other, meaning that they are converging toword the same value. For that reason, it could be possible to assess that there can not be seen any evidence that the chain has not achieved stationarity.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mcmc_trace(chainArray, pars="p[1]")
+```
+
+Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mcmc_dens(chainArray)
+```
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mcmc_dens_overlay(chainArray)
+```
+
+A third way is to check the autocorrelation plots. These plots are specific for each of the chains. What is expected is to see a low autocorrelation since it is a signal of convergence.
+As it possible to see from the Figure below, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mcmc_acf(chainArray)
+```
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mcmc_acf(chainArray, pars="p[1]")
+```
+
+### <span style="color: CornflowerBlue;"> 2.4) Inferential finding for Model 1 </span>
+
+Let's compute the point estimate for the $p_{i}$
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+chainMat <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
+
+p.hat.jags <- colMeans(chainMat)
+p.hat.jags
+```
+
+Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
+
+__Equal Tail Intervals: __
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+cred <- 0.95
+p.ET.jags <- apply(chainMat, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+p.ET.jags
+```
+
+__HPD Intervals: __
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+p.HPD.jags <- coda::HPDinterval(as.mcmc(chainMat))
+p.HPD.jags
+```
+
+## <span style="color: purple;"> 3)  Model 2 </span>
+
+In Model 1 it has been assumed that the true death probabilities are independet for each sub-area however, this is actually not too realistic. In fact, it is better to assume dependence among them and that they could be similar in some ways. For that reason, in this model it has been assumed that logit of each sub-area are related to each other. 
+
+\[r_i \sim Binomial(p_i,n_i) \]
+
+\[\log(p_i/(1-p_i) \sim Normal(\mu,\tau^{2}) \]
+
+Standard-non-informative priors are specified both for population mean (logit) probability of death ($\mu$) and precision($\tau$).
+
+
+\[\mu \sim Normal(0, 1*10^{-6})\]
+
+\[1/\tau^{2} \sim Gamma(0.001, 0.001) \]
+
+
+### <span style="color: CornflowerBlue;"> 2.4) JAGS Model 2 </span>
+
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+congo.jags2 <- list("r", "n", "N")
+model2 <- function() {
+  #likelihood
+  for(i in 1:N){
+    r[i] ~ dbinom(p[i], n[i]) #Model
+    b[i] ~ dnorm(mu,tau) # pooling
+    logit(p[i]) <- b[i] #link
+  }
+  mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
+  tau ~ dgamma(0.001, 0.001) #vague tau(precision) prior 
+  
+  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse sqared of the precision (tau)
+  pop.mean <- exp(mu) / (1 + exp(mu))
+}
+
+# Starting values
+mod.inits2 = function(){
+  list(b = rep(0.1,N),
+       tau = 1,
+       mu = 0)
+}
+
+# Run JAGS
+set.seed(123)
+mod.fit2 <- jags(data = congo.jags2,                            
+                 model.file = model2, inits = mod.inits2,          
+                 parameters.to.save = c("p","sigma","mu","pop.mean"),                  
+                 n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
+```
+
+### <span style="color: CornflowerBlue;"> 2.3) Output & Diagnostic for Model 2 </span>
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+mod.fit2
+```

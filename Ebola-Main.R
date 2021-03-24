@@ -1,4 +1,5 @@
 library(readr)
+library(readxl)
 library(dplyr)
 library(ggplot2)
 library(ggpubr)
@@ -7,6 +8,9 @@ library(bayesplot)
 library(TeachingDemos)
 library(kableExtra)
 library(gridExtra)
+
+# (1) IMPORT DATA -------------------------------------------------------------
+
 
 dir.create("images", showWarnings = TRUE)
 
@@ -19,13 +23,10 @@ ebola_congo <- (read_csv("dataset/ebola_congo.csv",
                                      `new_suspected_cases` = col_skip(), `old_suspected_cases` = col_skip(),
                                      `confirmed_cases_change` = col_skip(), `probable_cases_change` = col_skip(),
                                      `total_cases_change` = col_skip(), `confirmed_deaths_change` = col_skip(),
-                                     `total_deaths_change` = col_skip(), `total_suspected_cases_change` = col_skip()
+                                     `total_deaths_change` = col_skip(), `total_suspected_cases_change` = col_skip(),
+                                     `province` = col_character(), `total_cases` = col_number(), 
+                                     `total_deaths` = col_number(), `total_cured` = col_number() 
                                      ))[-1,]) # -1 is used for skip the first line
-ebola_congo$province <- as.character(ebola_congo$province)
-ebola_congo$total_cases <- as.numeric(as.character(ebola_congo$total_cases))
-ebola_congo$total_deaths <- as.numeric(as.character(ebola_congo$total_deaths))
-ebola_congo$total_cured <- as.numeric(as.character(ebola_congo$total_cured))
-
 
 fix.NA <- function(dataset,first,second=NA){
   candidate <- which(is.na(dataset[first])) # get vector of positions
@@ -41,7 +42,7 @@ fix.NA <- function(dataset,first,second=NA){
       }
       
       else { # if it is... than compute the value using the median
-        get_prov <- dataset$province[elm] # find the prov to use as groupby value
+        get_prov <- dataset$province[elm] # find the prov to use as group-by value
         new_v <- round(mean(c(
           dataset[first][which(dataset$province==get_prov),]
           )[[1]],na.rm=T),0) # get the median value 
@@ -60,6 +61,25 @@ fix.NA <- function(dataset,first,second=NA){
   }
   return(dataset)
 }
+fix.NA.2 <- function(dataset,col.name,method='median'){
+  col.idx <- grep(col.name, colnames(dataset)) # get index column to use to work only on it
+  elm.idx <- which(is.na(dataset[col.name])) # get element indexes where there are NAs
+  for (idx in elm.idx){
+    province.name <- dataset$province[idx] # get province name to use for group-by
+    if (method == 'median'){
+      new.value <- median(unlist(dataset[dataset$province==province.name,col.idx], use.names=FALSE),na.rm = T) #get the mean
+      dataset[idx,][col.name] = new.value # update dataset with new variable
+      print(paste('Warning: ',length(elm.idx),' NAs have been substituted using median...'))
+    }
+    else{
+      new.value <- mean(unlist(dataset[dataset$province==province.name,col.idx], use.names=FALSE),na.rm = T) #get the mean
+      dataset[idx,][col.name] = new.value # update dataset with new variable
+      print(paste('Warning: ',length(elm.idx),' NAs have been substituted using mean...'))
+      
+    }
+  }
+  return (dataset)
+}
 
 ebola_congo <- fix.NA(ebola_congo,'total_deaths','total_cured')
 
@@ -67,51 +87,69 @@ congo <- ebola_congo %>% group_by(health_zone) %>% summarize(province=first(prov
                                                              total_cases=sum(total_cases),
                                                              total_deaths=sum(total_deaths),
                                                              total_cured=total_cases- total_deaths) # groupy by health_zones
-#View(congo)
 congo <- congo[c(-5,-7,-8,-22,-25,-27),]#delete strange health_zones 
-congo <- congo[congo$total_deaths<=10000,]
-#View(congo)
-length(unique(congo$health_zone))
-length(congo[congo$health_zone=='South Kivu',])
-# Deaths Plots
-
-summary(congo$total_deaths)
+congo <- congo[congo$total_deaths<=5000,]
+summary(congo$total_cases)
 
 # malnutrition indexes
-
-malnutrition <- read_excel("dataset/malnutrition-decembre-2020.xlsx", 
-                           col_types = c("text", "skip", "text", 
+malnutrition <- read_excel("dataset/malnutrition.xlsx", 
+                           col_types = c("text", "skip", "skip", 
                                          "skip", "text", "text", "numeric", 
                                          "skip", "numeric", "numeric", "numeric", 
                                          "skip", "skip", "numeric", "skip", 
-                                         "text", "skip", "skip", "skip", "numeric", 
-                                         "text", "skip", "skip", "skip", 
+                                         "skip", "skip", "skip", "skip", "numeric", 
+                                         "skip", "skip", "skip", "skip", 
                                          "skip", "skip", "skip", 
                                          "skip", "skip", "skip"))
 
+colnames(malnutrition) <- c("province", "health_zone", "postecode",
+                             'population_estimate','MAS','MAM','GAM','stunted_growth',
+                             'malnutrition_among_FeFAs')
 
-malnutrition1 <- malnutrition[malnutrition$`Zone de Santé` %in% unique(congo$health_zone),]
+malnutrition$health_zone[malnutrition$health_zone %in% c("Manguredjipa","Nyakunde") ] <- c("Mangurujipa","Nyankunde")
 
-unique(malnutrition1$`Zone de Santé`)
+cm_intersection <- intersect(unique(congo$health_zone), unique(malnutrition$health_zone))
+malnutrition <- malnutrition[malnutrition$health_zone %in% cm_intersection,][-1]
 
-unique(congo$health_zone)
-View(malnutrition1)
+congo <- left_join(congo, malnutrition, by = "health_zone")
+
+### find NAs and infer them using group_mean:
+
+col.numeric<- unlist(lapply(congo, is.numeric)) # get only numeric cols
+# Getting the columns of A that have at least 1 NA is equivalent to get the rows that have at least NA for t(A).
+col.names <- colnames(congo[col.numeric])[!complete.cases(t(congo[col.numeric]))] # complete.cases by definition (very efficient since it is just a call to C function) gives the rows without any missing value.
+for (name in col.names) congo <- fix.NA.2(congo, name) # fix NAs
+
+summary(congo)
+
+dat <- data.frame('Var'=c('total cases','total deaths','total cured', 'MAS', 'MAM', 'GAM',
+                          'stunted_growth', 'malnutrition_among_FeFAs','population_estimate'),
+                  'Min.'=c(34,0,1, 0.30, 2.40, 2.80, 47.10, 0.20,48003),
+                  'Q1.'=c(657, 241, 147, 1.90, 2.70, 4.60, 49.60, 0.20, 126776), 
+                  'Median'=c(1209, 685, 631, 1.90, 2.70, 4.60, 49.60, 0.20, 161232),
+                  'Mean'=c(2629,1215,1414, 2.59, 4.00, 6.64, 53.51, 0.69,200370),
+                  'Q3.'=c(5562,1711,1482, 3.40, 5.10, 10.20, 55.20, 1.30,264633),
+                  'Max.'=c(8889,4403,7146, 6.10, 10.90, 14.30, 72.40, 1.30,462362))
+dat_summary <- dat %>% kbl(caption='Categorical Variables Summary Table:') %>%
+  kable_paper(bootstrap_options = c("striped", "hover"), full_width = F, html_font = "Cambria") %>%
+  row_spec(0, background = "orchid", bold=T, color = 'black') %>%
+  column_spec(1, width = "30em")
+dat_summary
 
 
+t1 <- tableGrob(dat, theme=ttheme_minimal(), rows=NULL)
 
+# (2) SUMMARY PLOTS -----------------------------------------------------------
 
-
-
-#########################################
 deaths_summary <- congo %>% ggplot(aes(x=total_deaths)) +
   geom_histogram(binwidth=500, fill= 'orchid',colour = 'purple', 
                  alpha=.6,boundary = 0, closed = "left") +
   ylim(0,7)+
-  xlim(0, 5000) +
+  xlim(0, 8000) +
   geom_vline(xintercept = 241, linetype='dotted', lwd=.8) + #1st quantile
   geom_vline(xintercept = 685, linetype='dashed', lwd=.8, col='red') + # median
   geom_vline(xintercept = 1711, linetype='dotted', lwd=.8) + #3rd quantile
-  scale_x_discrete(name="Deaths",limits= seq(0,4500,500)) +
+  scale_x_discrete(name="Deaths",limits= seq(0,8000,500)) +
   labs(y=' ')
 
 cases_summary <- congo %>% ggplot(aes(x=total_cases)) +
@@ -121,17 +159,9 @@ cases_summary <- congo %>% ggplot(aes(x=total_cases)) +
   geom_vline(xintercept = 657, linetype='dotted', lwd=.8) + #1st quantile
   geom_vline(xintercept = 1209, linetype='dashed', lwd=.8, col='red') + # median
   geom_vline(xintercept = 5562, linetype='dotted', lwd=.8) + #3rd quantile
-  scale_x_discrete(name="Cases",limits= seq(0,9000,1000)) +
+  scale_x_discrete(name="Cases",limits= seq(0,22000,1000)) +
   labs(y=' ')
 
-dat <- data.frame('Var'=c('total cases','total deaths','total cured'),
-                  'Min.'=c(34,0,1), 'Q1.'=c(657, 241, 147), 'Median'=c(1209, 685, 631),
-                  'Mean'=c(2629,1215,1414),'Q3.'=c(5562,1711,1482), 'Max.'=c(8889,4403,7146))
-dat_summary <- dat %>% kbl(caption='Summary table:') %>%
-  kable_material_dark()
-dat_summary
-
-t1 <- tableGrob(dat, theme=ttheme_minimal(), rows=NULL)
 
 summary_figure <- grid.arrange(deaths_summary, cases_summary,t1,nrow = 1)
 
@@ -144,8 +174,8 @@ deaths_h <- congo %>% ggplot(aes(x=total_deaths)) +
   geom_histogram(binwidth=500, fill= 'orchid',colour = 'purple', 
                  alpha=.6,boundary = 0, closed = "left") +
   ylim(0,7)+
-  xlim(0, 5000) +
-  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  xlim(0, 8000) +
+  scale_x_discrete(name=" ",limits= seq(0,8000,500)) +
   labs(y=' ') +
   theme(axis.text.y = element_text(colour='red'),
         axis.line.y = element_line(size = 1, colour = "red"))
@@ -156,7 +186,7 @@ deaths_prov <- congo %>% ggplot(aes(x=total_deaths, fill=province)) +
                  alpha=.6,boundary = 0, closed = "right") +
   scale_fill_manual(values=group.colors) +
   ylim(0,7)+
-  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  scale_x_discrete(name=" ",limits= seq(0,10000,1000)) +
   labs(title = 'Total deaths',y=' ') +
   theme(legend.position = c(.88, 0.65),
         axis.text.y = element_text(colour='red'),
@@ -167,10 +197,10 @@ deaths_d <- congo %>% ggplot(aes(x=total_deaths)) +
   geom_histogram(aes(y=..density..), binwidth=500,
                  fill= 'orchid',colour = 'purple', 
                  alpha=.6,boundary = 0, closed = "left") +
-  xlim(0, 5000) +
+  xlim(0, 10000) +
   ylim(0,10e-04)+
   geom_density(fill='red',alpha=.2,col='violet') +
-  scale_x_discrete(name=" ",limits= seq(0,4500,500)) +
+  scale_x_discrete(name=" ",limits= seq(0,10000,1000)) +
   labs(y='Densities') +
   theme(plot.title = element_text(hjust = 0.5, size = 14, color = 'purple'),
         axis.title.y = element_text(size=12,colour = 'black',face='bold'),
@@ -183,7 +213,7 @@ cases_h <- congo %>% ggplot(aes(x=total_cases)) +
   geom_histogram(binwidth=1000, fill= 'cyan4',colour = 'darkgreen', 
                  alpha=.6,boundary = 0, closed = "left") +
   ylim(0,7)+
-  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  scale_x_discrete(name=" ",limits= seq(0,22500,1500)) +
   labs(y=' ') +
   theme(axis.text.y = element_text(colour='red'),
         axis.line.y = element_line(size = 1, colour = "red"))
@@ -193,7 +223,7 @@ cases_prov <- congo %>% ggplot(aes(x=total_cases, fill=province)) +
   geom_histogram(binwidth=1000,colour = 'darkgreen', 
                  alpha=.6,boundary = 0, closed = "right") +
   scale_fill_manual(values=group.colors) +
-  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  scale_x_discrete(name=" ",limits= seq(0,22500,1500)) +
   ylim(0,7)+
   labs(title = 'Total cases',y=' ') +
   theme(legend.position = c(.88, 0.65),
@@ -205,10 +235,10 @@ cases_d <- congo %>% ggplot(aes(x=total_cases)) +
   geom_histogram(aes(y=..density..), binwidth=1000,
                  fill= 'cyan4',colour = 'darkgreen', 
                  alpha=.6,boundary = 0, closed = "left") +
-  xlim(0, 5000) +
+  xlim(0, 22500) +
   ylim(0,10e-04)+
   geom_density(fill='green',alpha=.2,col='seagreen1') +
-  scale_x_discrete(name=" ",limits= seq(0,9000,1000)) +
+  scale_x_discrete(name=" ",limits= seq(0,22500,1500)) +
   labs(y=' ') +
   theme(plot.title = element_text(hjust = 0.5, size = 14, color = 'darkgreen'),
         axis.line.y = element_line(size = 1, colour = "black"),
@@ -241,11 +271,11 @@ saving('images/combo.jpg',annotaded_fi,w=900,h=556)
 
 
 
+# (3) INFER USING FORMULAS ----------------------------------------------------
 
-
-####################
 alpha.star <- .5+sum(congo$total_deaths)
 beta.star <-.5+sum(congo$total_cases) - sum(congo$total_deaths)
+N <- nrow(congo)
 
 p.hat.c <- alpha.star/(alpha.star+beta.star) # point estimate
 
@@ -299,7 +329,8 @@ ggplot() +
 
 
 
-############### JAGS ###################
+
+# (4) MODEL 1 (ASSUME INDEPENDECE) --------------------------------------------
 
 n <- congo$total_cases # tries 
 r <- congo$total_deaths # number of success (unfortunately...)
@@ -322,18 +353,28 @@ mod.inits = function(){
 mod.params <- c("p")
 
 # Run JAGS
-set.seed(123)
+set.seed(1618216)
 mod.fit <- jags(data = congo.jags,                            
                 model.file = model, inits = mod.inits,          
                 parameters.to.save = mod.params,                  
                 n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 mod.fit
 
-# to do better diagnostic we can export the chain array:
+
+# (4.1) Diagnostic for MODEL 1 --------------------------------------------
+
 chainArray <- mod.fit$BUGSoutput$sims.array
 
 bayesplot::mcmc_combo(chainArray)
 bayesplot::mcmc_acf(chainArray)
+
+color_scheme_set("red")
+plot_title <- ggtitle("Posterior distributions",
+                      "with medians & 90% intervals")
+mcmc_areas(chainArray,
+           pars=c("p[11]", "p[1]", "p[10]", "p[13]"),
+           prob = 0.9) + plot_title
+
 
 coda.fit <- as.mcmc(mod.fit)
 coda::acfplot(coda.fit)
@@ -365,17 +406,54 @@ p.ET.jags
 p.HPD.c
 p.HPD.jags
 
-##### Assuming dependencies among areas
+##### MODEL 2 Assuming dependencies among areas #########
+library(reshape2)
+
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+cormat <- round(cor(congo[unlist(lapply(congo, is.numeric))]),2)
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+head(melted_cormat)
+
+library(viridis)
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+  geom_tile(color = "white")+
+  scale_fill_viridis(limit = c(-1,1), space = "Lab", 
+                       name="Pearson\nCorrelation", discrete=FALSE) +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1))+
+  coord_fixed()
 
 
-congo.jags2 <- list("r", "n", "N")
+
+n <- congo$total_cases # tries 
+r <- congo$total_deaths # number of success (unfortunately...)
+MAG <- congo$MAG
+STG <- congo$stunted_growth
+pop <- congo$population_estimate_2019
+N <- nrow(congo)
+
+congo.jags2 <- list("r", "n", "N","MAG","STG","pop")
 model2 <- function() {
-  #likelihood
+  # Likelihood
   for(i in 1:N){
     r[i] ~ dbinom(p[i], n[i]) #Model
-    b[i] ~ dnorm(mu,tau) # pooling
-    logit(p[i]) <- b[i] #link
+    logit(p[i]) <- beta1[i] + beta2[i]*MAG[i] + beta3[i]*STG[i] + beta4[i]*pop[i]  #link
   }
+  
+  #Priors
+  for (i in 1:N){ 
+    beta1[i] ~ dnorm(mu,tau) # pooling
+    beta2[i] ~ dnorm(mu,tau) # pooling
+    beta3[i] ~ dnorm(mu,tau) # pooling
+    beta4[i] ~ dnorm(mu,tau) # pooling
+  }
+  
   mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
   tau ~ dgamma(0.001, 0.001) #vague tau(precision) prior 
   
@@ -385,18 +463,25 @@ model2 <- function() {
 
 # Starting values
 mod.inits2 = function(){
-  list(b = rep(0.1,N),
+  list(beta1 = rep(0,N),
+       beta2 = rep(0,N),
+       beta3 = rep(0,N),
+       beta4 = rep(0,N),
        tau = 1,
        mu = 0)
 }
 
 # Run JAGS
-set.seed(123)
+set.seed(1618216)
 mod.fit2 <- jags(data = congo.jags2,                            
                  model.file = model2, inits = mod.inits2,          
-                 parameters.to.save = c("p","sigma","mu","pop.mean"),                  
+                 parameters.to.save = c("p","sigma","mu","pop.mean", "beta1", "beta2", "beta3"),                  
                  n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 mod.fit2
+
+cor(congo)
+
+cor(congo[unlist(lapply(congo, is.numeric))])
 
 
 ########## FREQUENTIST APPROACH ##########

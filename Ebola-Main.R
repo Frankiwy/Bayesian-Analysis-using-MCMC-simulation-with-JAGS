@@ -1,3 +1,7 @@
+
+
+
+# (0) Directories and Functions ---------------------------------------------------
 library(readr)
 library(readxl)
 library(dplyr)
@@ -8,25 +12,12 @@ library(bayesplot)
 library(TeachingDemos)
 library(kableExtra)
 library(gridExtra)
-
-# (1) IMPORT DATA -------------------------------------------------------------
-
+library(viridis)
+library(reshape2)
 
 dir.create("images", showWarnings = TRUE)
-
-ebola_congo <- (read_csv("dataset/ebola_congo.csv",
-                    col_types = cols(`publication_date` = col_skip(), `source` = col_skip(),
-                                     `report_date` = col_skip(), `country` = col_skip(),
-                                     `confirmed_cases` = col_skip(), `probable_cases` = col_skip(), 
-                                     `confirmed_deaths` = col_skip(), `new_deaths` = col_skip(),
-                                     `total_suspected_cases` = col_skip(), `new_cured` = col_skip(),
-                                     `new_suspected_cases` = col_skip(), `old_suspected_cases` = col_skip(),
-                                     `confirmed_cases_change` = col_skip(), `probable_cases_change` = col_skip(),
-                                     `total_cases_change` = col_skip(), `confirmed_deaths_change` = col_skip(),
-                                     `total_deaths_change` = col_skip(), `total_suspected_cases_change` = col_skip(),
-                                     `province` = col_character(), `total_cases` = col_number(), 
-                                     `total_deaths` = col_number(), `total_cured` = col_number() 
-                                     ))[-1,]) # -1 is used for skip the first line
+dir.create("images/model1", showWarnings = TRUE)
+dir.create("images/model2", showWarnings = TRUE)
 
 fix.NA <- function(dataset,first,second=NA){
   candidate <- which(is.na(dataset[first])) # get vector of positions
@@ -45,7 +36,7 @@ fix.NA <- function(dataset,first,second=NA){
         get_prov <- dataset$province[elm] # find the prov to use as group-by value
         new_v <- round(mean(c(
           dataset[first][which(dataset$province==get_prov),]
-          )[[1]],na.rm=T),0) # get the median value 
+        )[[1]],na.rm=T),0) # get the median value 
         if ((!is.na(baseline)) & (dataset$total_cases[elm] >= new_v )) dataset[first][elm,] <- new_v # substitute the new value
         else delete <- c(delete, elm) # elm to be deleted
       }
@@ -53,7 +44,7 @@ fix.NA <- function(dataset,first,second=NA){
     print(paste('Warning: ',(length(candidate)-length(delete)),' values have been approximated & ',
                 length(delete),' have been candidated...'))
     dataset <- dataset[-delete,] # candidate values
-
+    
   }
   else {
     dataset <- dataset[-candidate,] # candidate values 
@@ -80,6 +71,28 @@ fix.NA.2 <- function(dataset,col.name,method='median'){
   }
   return (dataset)
 }
+saving <- function(name,the.figure,w,h){
+  png(filename=name, width = w, height = h) # open image
+  plot(the.figure)
+  dev.off() # close and save image
+}
+
+# (1) IMPORT DATA -------------------------------------------------------------
+
+
+ebola_congo <- (read_csv("dataset/ebola_congo.csv",
+                    col_types = cols(`publication_date` = col_skip(), `source` = col_skip(),
+                                     `report_date` = col_skip(), `country` = col_skip(),
+                                     `confirmed_cases` = col_skip(), `probable_cases` = col_skip(), 
+                                     `confirmed_deaths` = col_skip(), `new_deaths` = col_skip(),
+                                     `total_suspected_cases` = col_skip(), `new_cured` = col_skip(),
+                                     `new_suspected_cases` = col_skip(), `old_suspected_cases` = col_skip(),
+                                     `confirmed_cases_change` = col_skip(), `probable_cases_change` = col_skip(),
+                                     `total_cases_change` = col_skip(), `confirmed_deaths_change` = col_skip(),
+                                     `total_deaths_change` = col_skip(), `total_suspected_cases_change` = col_skip(),
+                                     `province` = col_character(), `total_cases` = col_number(), 
+                                     `total_deaths` = col_number(), `total_cured` = col_number() 
+                                     ))[-1,]) # -1 is used for skip the first line
 
 ebola_congo <- fix.NA(ebola_congo,'total_deaths','total_cured')
 
@@ -120,7 +133,6 @@ col.numeric<- unlist(lapply(congo, is.numeric)) # get only numeric cols
 col.names <- colnames(congo[col.numeric])[!complete.cases(t(congo[col.numeric]))] # complete.cases by definition (very efficient since it is just a call to C function) gives the rows without any missing value.
 for (name in col.names) congo <- fix.NA.2(congo, name) # fix NAs
 
-summary(congo)
 
 dat <- data.frame('Var'=c('total cases','total deaths','total cured', 'MAS', 'MAM', 'GAM',
                           'stunted_growth', 'malnutrition_among_FeFAs','population_estimate'),
@@ -135,9 +147,6 @@ dat_summary <- dat %>% kbl(caption='Categorical Variables Summary Table:') %>%
   row_spec(0, background = "orchid", bold=T, color = 'black') %>%
   column_spec(1, width = "30em")
 dat_summary
-
-
-t1 <- tableGrob(dat, theme=ttheme_minimal(), rows=NULL)
 
 # (2) SUMMARY PLOTS -----------------------------------------------------------
 
@@ -256,13 +265,9 @@ annotaded_fi <- annotate_figure(figure,
                                  rot = 90, face='bold', hjust = -.4, vjust = 2.3),
                 fig.lab = " ", fig.lab.face = "bold")
 
-saving <- function(name,the_figure,w,h){
-  png(filename=name, width = w, height = h) # open image
-  plot(the_figure)
-  dev.off() # close and save image
-}
 
-saving('images/combo.jpg',annotaded_fi,w=900,h=556)
+
+saving('images/death_cases_histogram.jpg',annotaded_fi,w=900,h=556)
 
 
 
@@ -349,40 +354,92 @@ model <- function() {
 mod.inits = function(){
   list("p" = rep(0.1,N))
 }
-# Define parameters of interest
-mod.params <- c("p")
 
 # Run JAGS
 set.seed(1618216)
 mod.fit <- jags(data = congo.jags,                            
                 model.file = model, inits = mod.inits,          
-                parameters.to.save = mod.params,                  
+                parameters.to.save = c("p"),                  
                 n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 mod.fit
 
 
 # (4.1) Diagnostic for MODEL 1 --------------------------------------------
 
-chainArray <- mod.fit$BUGSoutput$sims.array
+chainArray <- mod.fit$BUGSoutput$sims.array # extraxt chains
 
-bayesplot::mcmc_combo(chainArray)
-bayesplot::mcmc_acf(chainArray)
+mod.fit$BUGSoutput$
 
-color_scheme_set("red")
+# (2) mcmc_acf
+color_scheme_set("mix-teal-pink")
+## (2.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_acf.png',w=5220,h=2700,
+       the.figure = mcmc_acf(chainArray,
+                               facet_args = list(labeller = ggplot2::label_parsed)))
+## (2.2) plot first 4 p_{i}
+mcmc_acf(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+         facet_args = list(labeller = ggplot2::label_parsed))
+
+# (3) mcmc_trace
+color_scheme_set("mix-brightblue-gray")
+## (3.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_trace.png',w=5220,h=2700,
+       the.figure = mcmc_trace(chainArray,
+                             facet_args = list(labeller = ggplot2::label_parsed)))
+## (3.2) plot first 4 p_{i}
+mcmc_trace(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+         facet_args = list(labeller = ggplot2::label_parsed))
+
+
+## (3.3) closer look to the window
+mcmc_trace(chainArray, pars = "p[1]", window = c(300,500),
+           facet_args = list(labeller = ggplot2::label_parsed))
+
+# (4) mcmc_violin
+color_scheme_set("green")
+## (4.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_violin.png',w=5220,h=2700,
+       the.figure = mcmc_violin(chainArray,
+                                facet_args = list(labeller = ggplot2::label_parsed),
+                                probs = c(0.1, 0.5, 0.9)) + 
+         panel_bg(color = "gray20", size = 1, fill = "pink")) 
+## (4.2) plot first 4 p_{i}
+mcmc_violin(chainArray, par=c("p[1]","deviance","p[3]","p[4]"),
+            facet_args = list(labeller = ggplot2::label_parsed),
+            probs = c(0.1, 0.5, 0.9)) +
+  myfacets
+
+
+# (5) mcmc_density
+color_scheme_set("pink")
+## (5.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_density.png',w=5220,h=2700,
+       the.figure = mcmc_dens(chainArray,
+                               facet_args = list(labeller = ggplot2::label_parsed)))
+## (5.2) plot first 4 p_{i}
+myfacets <-
+  facet_bg(fill = "gray50", color = NA, ) +
+  facet_text(face = "bold", color = 'violetred3', size = 10)
+
+mcmc_dens_overlay(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+           facet_args = list(labeller = ggplot2::label_parsed)) +
+  plot_bg(fill = "gray90") +
+  myfacets
+
+color_scheme_set("green")
 plot_title <- ggtitle("Posterior distributions",
                       "with medians & 90% intervals")
 mcmc_areas(chainArray,
-           pars=c("p[11]", "p[1]", "p[10]", "p[13]"),
-           prob = 0.9) + plot_title
+           pars=c("p[1]", "p[10]", "p[11]"),
+           prob = 0.9, point_est = 'median') + plot_title
+
+mcmc_areas(chainArray,
+           pars=c("deviance"),
+           prob = 0.9, point_est = 'median') + plot_title
 
 
-coda.fit <- as.mcmc(mod.fit)
-coda::acfplot(coda.fit)
-coda::geweke.plot(coda.fit)
-coda::geweke.diag(coda.fit)
-coda::gelman.plot(coda.fit)
 
-
+# (4.2) Inferential finding for Model 1 -----------------------------------------
 
 chainMat <- mod.fit$BUGSoutput$sims.matrix
 #point estimate
@@ -406,9 +463,8 @@ p.ET.jags
 p.HPD.c
 p.HPD.jags
 
-##### MODEL 2 Assuming dependencies among areas #########
-library(reshape2)
-
+# (5) MODEL 2 Assuming dependencies among areas ---------------------------
+## herethe Pearson Corr Coeff is computed
 get_upper_tri <- function(cormat){
   cormat[lower.tri(cormat)]<- NA
   return(cormat)
@@ -416,34 +472,33 @@ get_upper_tri <- function(cormat){
 
 cormat <- round(cor(congo[unlist(lapply(congo, is.numeric))]),2)
 upper_tri <- get_upper_tri(cormat)
-melted_cormat <- melt(upper_tri, na.rm = TRUE)
+melted_cormat <- melt(cormat, na.rm = TRUE)
 head(melted_cormat)
 
-library(viridis)
 ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
   geom_tile(color = "white")+
   scale_fill_viridis(limit = c(-1,1), space = "Lab", 
                        name="Pearson\nCorrelation", discrete=FALSE) +
   theme_minimal()+ 
   theme(axis.text.x = element_text(angle = 45, vjust = 1, 
-                                   size = 12, hjust = 1))+
+                                   size = 10, hjust = 1))+
   coord_fixed()
 
-
+# (5.2) Develop Model 2 ------------------------------------------
 
 n <- congo$total_cases # tries 
 r <- congo$total_deaths # number of success (unfortunately...)
-MAG <- congo$MAG
+GAM <- congo$GAM
 STG <- congo$stunted_growth
-pop <- congo$population_estimate_2019
+pop <- congo$population_estimate
 N <- nrow(congo)
 
-congo.jags2 <- list("r", "n", "N","MAG","STG","pop")
+congo.jags2 <- list("r", "n", "N","GAM","STG","pop")
 model2 <- function() {
   # Likelihood
   for(i in 1:N){
     r[i] ~ dbinom(p[i], n[i]) #Model
-    logit(p[i]) <- beta1[i] + beta2[i]*MAG[i] + beta3[i]*STG[i] + beta4[i]*pop[i]  #link
+    logit(p[i]) <- beta1[i] + beta2[i]*GAM[i] + beta3[i]*STG[i] + beta4[i]*pop[i]  #link
   }
   
   #Priors
@@ -452,6 +507,7 @@ model2 <- function() {
     beta2[i] ~ dnorm(mu,tau) # pooling
     beta3[i] ~ dnorm(mu,tau) # pooling
     beta4[i] ~ dnorm(mu,tau) # pooling
+    
   }
   
   mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
@@ -479,12 +535,117 @@ mod.fit2 <- jags(data = congo.jags2,
                  n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 mod.fit2
 
-cor(congo)
 
-cor(congo[unlist(lapply(congo, is.numeric))])
+# (5.3) Diagnostic for MODEL 1 --------------------------------------------
+
+chainArray <- mod.fit$BUGSoutput$sims.array # extraxt chains
+
+mod.fit$BUGSoutput$
+  
+  np_cp <- nuts_params(mod.fit)
+
+# (2) mcmc_acf
+color_scheme_set("mix-teal-pink")
+## (2.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_acf.png',w=5220,h=2700,
+       the.figure = mcmc_acf(chainArray,
+                             facet_args = list(labeller = ggplot2::label_parsed)))
+## (2.2) plot first 4 p_{i}
+mcmc_acf(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+         facet_args = list(labeller = ggplot2::label_parsed))
+
+# (3) mcmc_trace
+color_scheme_set("mix-brightblue-gray")
+## (3.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_trace.png',w=5220,h=2700,
+       the.figure = mcmc_trace(chainArray,
+                               facet_args = list(labeller = ggplot2::label_parsed)))
+## (3.2) plot first 4 p_{i}
+mcmc_trace(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+           facet_args = list(labeller = ggplot2::label_parsed))
 
 
-########## FREQUENTIST APPROACH ##########
+## (3.3) closer look to the window
+mcmc_trace(chainArray, pars = "p[1]", window = c(300,500),
+           facet_args = list(labeller = ggplot2::label_parsed))
+
+# (4) mcmc_violin
+color_scheme_set("green")
+## (4.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_violin.png',w=5220,h=2700,
+       the.figure = mcmc_violin(chainArray,
+                                facet_args = list(labeller = ggplot2::label_parsed),
+                                probs = c(0.1, 0.5, 0.9)) + 
+         panel_bg(color = "gray20", size = 1, fill = "pink")) 
+## (4.2) plot first 4 p_{i}
+mcmc_violin(chainArray, par=c("p[1]","deviance","p[3]","p[4]"),
+            facet_args = list(labeller = ggplot2::label_parsed),
+            probs = c(0.1, 0.5, 0.9)) +
+  myfacets
+
+
+# (5) mcmc_density
+color_scheme_set("pink")
+## (5.1) all p_{i} saved in high resolution images
+saving('images/model1/mcmc_density.png',w=5220,h=2700,
+       the.figure = mcmc_dens(chainArray,
+                              facet_args = list(labeller = ggplot2::label_parsed)))
+## (5.2) plot first 4 p_{i}
+myfacets <-
+  facet_bg(fill = "gray50", color = NA, ) +
+  facet_text(face = "bold", color = 'violetred3', size = 10)
+
+mcmc_dens_overlay(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+                  facet_args = list(labeller = ggplot2::label_parsed)) +
+  plot_bg(fill = "gray90") +
+  myfacets
+
+color_scheme_set("green")
+plot_title <- ggtitle("Posterior distributions",
+                      "with medians & 90% intervals")
+mcmc_areas(chainArray,
+           pars=c("p[1]", "p[10]", "p[11]"),
+           prob = 0.9, point_est = 'median') + plot_title
+
+mcmc_areas(chainArray,
+           pars=c("deviance"),
+           prob = 0.9, point_est = 'median') + plot_title
+
+# (5.4) Inferential finding for Model 2 -----------------------------------------
+
+chainMat2 <- mod.fit2$BUGSoutput$sims.matrix
+#point estimate
+p.hat.jags2 <- colMeans(chainMat2)
+p.hat.jags2
+
+#intervals
+cred <- 0.95
+p.ET.jags2 <- apply(chainMat2, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+
+#HPD 
+p.HPD.jags2 <- coda::HPDinterval(as.mcmc(chainMat2))
+
+
+p.hat.c
+p.hat.jags2
+
+p.ET.c
+p.ET.jags
+
+p.HPD.c
+p.HPD.jags2
+
+
+
+
+# (6) Frequentest Approach ------------------------------------------------
+
+#At first number of sampling was picked. 
+#After that in the loop list of estimated probabilities that we calculated
+#below was resampled with replacement. 
+#Mean and Standard deviation of each sample were saved. 
+#Using percentiles we can construct our Confidence Intervals.
+
 
 congo$prob =  congo$total_deaths / congo$total_cases
 congo
@@ -508,8 +669,3 @@ paste("Mean Lower Bound:", round(quantile(mean.output, c(0.025)),3),
 paste("SD Lower Bound:", round(quantile(sd.output, c(0.025)),3),
       "SD Upper Bound:", round(quantile(sd.output, c(0.975)),3))
 
-
-
-
-
-congo

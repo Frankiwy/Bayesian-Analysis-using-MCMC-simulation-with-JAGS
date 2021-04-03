@@ -362,7 +362,7 @@ set.seed(1618216)
 mod.fit <- jags(data = congo.jags,                            
                 model.file = model, inits = mod.inits,          
                 parameters.to.save = c("p"),                  
-                n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
+                n.chains = 3, n.iter = 1e4, n.burnin = 1000, n.thin=5)
 mod.fit
 
 
@@ -370,15 +370,38 @@ mod.fit
 # (4.1) Diagnostic for MODEL 1 --------------------------------------------
 
 chainArray <- mod.fit$BUGSoutput$sims.array # extraxt chains
-library(coda)
+
+
+color_scheme_set("green")
+plot_title <- ggtitle("Posterior distributions",
+                      "with Median & 90% Intervals")
+chain_p <- mcmc_areas(chainArray, pars="p", prob = 0.9, point_est = 'median') + plot_title
+
+chain_dev <- mcmc_areas(chainArray,
+           pars=c("deviance"),
+           prob = 0.9, point_est = 'median') + plot_title
+
+ggarrange(chain_p, chain_dev,
+          ncol = 2, nrow = 1)
+
+
+chainMatrix <- mod.fit$BUGSoutput$sims.matrix # extraxt chains
+coda.fit.matrix <- as.mcmc(chainMatrix)
+effectiveSize(coda.fit.matrix)
+
 coda.fit <- as.mcmc(mod.fit)
-coda::autocorr.plot(coda.fit)
+coda::autocorr.plot(coda.fit, lag.max = 500)
 coda::autocorr.diag(coda.fit)
 coda::effectiveSize(coda.fit)
-
+summary(coda.fit)
 coda::traceplot(coda.fit)
 
+# 
+coda.fit2 <- as.mcmc(mod.fit$BUGSoutput$sims.matrix[,2])
 
+coda::raftery.diag(coda.fit2)
+
+coda::effectiveSize(coda.fit2)
 
 coda::gelman.diag(coda.fit)
 coda::gelman.plot(coda.fit)
@@ -501,10 +524,10 @@ ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
 
 library("corrplot")
 Cor = cor(congo[unlist(lapply(congo, is.numeric))])
+
 corrplot(Cor, type="upper", method="ellipse", tl.pos="d")
 corrplot(Cor, type="lower", method="number", col="black", 
          add=TRUE, diag=FALSE, tl.pos="n", cl.pos="n")
-
 # (5.2) Develop Model 2 ------------------------------------------
 
 n <- congo$total_cases # tries 
@@ -601,11 +624,19 @@ mod.fit2.1 <- jags(data = congo.jags2.1,
 mod.fit2.1
 
 
+coda.fit2 <- as.mcmc(mod.fit2.1)
+gelman.diag(coda.fit2[,7:23])
+gelman.plot(coda.fit2[,1:4])
+
+
+autocorr.diag(coda.fit2)
+
 # ## (5.2.2) MODEL PREDICTION  --------------------------------------------
 # vediamo da dove vengono queste probabilità... come sono state calcolate?????
 
 chainMatix2.1 <- mod.fit2.1$BUGSoutput$sims.matrix # extraxt chains
 pm_coeff <- colMeans(chainMatix2.1) #posterior mean of the coefficients betas
+
 
 
 exp_comp <- function(x1,x2,x3) 1/(1+exp(-(-5.56819741+0.12126469*x1+0.08479912*x2+0.29248419*x3)))
@@ -622,20 +653,19 @@ plot(old.probs - est.probs, ylab='resid', col='red', pch=20,
 plot(est.probs, old.probs)
 
 
-mean(pm_coeff[1:3,1])
-yhat = rep(posterior_mean_par[4:20], 1)
+pm_Xb <- pm_coeff[1] + data.matrix(congo[c(10,11,12)]) %*% pm_coeff[2:4]
+
+phat <- 1.0/(1.0+exp(-pm_Xb))
+
+Xnew <- cbind(X,'phat'=phat)
+
+plot(phat,old.probs)
+
+tab.05 <- table(phat > 0.5, old.probs)
 
 
-resid = (congo$total_deaths / congo$total_cases) - yhat
 
-plot(resid)
-plot(jitter(yhat),resid)
-congo$total_deaths
-var(redis[])
 
-summary(chainArray2.1)
-
-beta
 
 # (5.3) Diagnostic for MODEL 2 --------------------------------------------
 
@@ -710,6 +740,22 @@ saveGIF ({
 setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
 
 
+coda.fit2 <- as.mcmc(mod.fit2.1)
+gelman.diag(coda.fit2[,c(7:23)])
+
+coda.fit2[,'p[1]']
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
+saveGIF ({
+  # (3) Gelman-Rubin
+  for (m in 1:N){
+    gelman.plot(coda.fit2[,paste("p[",m,"]",sep='')], main=paste('p',m))
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "Gelman_Rubin_plot.gif")
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
+
+
+
 
 color_scheme_set("green")
 plot_title <- ggtitle("Posterior distributions",
@@ -740,7 +786,33 @@ saveGIF ({
 }, ani.height = 400, ani.width =750, movie.name = "pi_traceplot.gif")
 setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
 
-# (5.4) Inferential finding for Model 2 -----------------------------------------
+
+
+# (5.4) Residuals ---------------------------------------------------------
+
+chainMatix2.1 <- mod.fit2.1$BUGSoutput$sims.matrix # extraxt chains
+pm_coeff <- colMeans(chainMatix2.1) #posterior mean of the coefficients betas
+
+
+probs.ini <- congo$total_deaths / congo$total_cases
+probs.post <- pm_coeff[7:23]
+
+p.resid <- probs.post - probs.ini
+
+plot(p.resid)
+
+qqnorm(p.resid)
+#This plot shows the theoretical quantiles or percentiles of an actual normal distribution on the x-axis with the sample quantiles of the residuals on the y-axis.
+#If the residuals actually came from a normal distribution, the points on this plot would essentially follow a straight line.
+#In this case, we have a curvature going up that increases and gets more extreme at the high values. This indicates that the residuals have a distribution that is right skewed and not normal.
+
+plot(probs.post,p.resid)
+
+
+
+
+
+# (5.5) Inferential finding for Model 2 -----------------------------------------
 
 chainMat2 <- mod.fit2$BUGSoutput$sims.matrix
 #point estimate
@@ -797,6 +869,12 @@ paste("Mean Lower Bound:", round(quantile(mean.output, c(0.025)),3),
 
 paste("SD Lower Bound:", round(quantile(sd.output, c(0.025)),3),
       "SD Upper Bound:", round(quantile(sd.output, c(0.975)),3))
+
+
+
+
+
+
 
 
 

@@ -1,7 +1,7 @@
 
 
 
-# (0) Directories and Functions ---------------------------------------------------
+# (0) Libraries and Functions ---------------------------------------------------
 library(readr)
 library(readxl)
 library(dplyr)
@@ -14,6 +14,8 @@ library(kableExtra)
 library(gridExtra)
 library(viridis)
 library(reshape2)
+library(coda)
+library(animation)
 
 dir.create("images", showWarnings = TRUE)
 dir.create("images/model1", showWarnings = TRUE)
@@ -345,14 +347,14 @@ congo.jags <- list("r", "n", "N")
 # Model
 model <- function() {
   for(i in 1:N){
-    p[i] ~ dbeta(1.0, 1.0) # Prior
-    r[i] ~ dbinom(p[i], n[i]) # Model
+    r[i] ~ dbinom(p, n[i]) # Model
   }
+  p ~ dbeta(1.0, 1.0) # Prior
 }
 
 # Starting values
 mod.inits = function(){
-  list("p" = rep(0.1,N))
+  list("p" = rbeta(1, 1/2, 1/2))
 }
 
 # Run JAGS
@@ -364,12 +366,22 @@ mod.fit <- jags(data = congo.jags,
 mod.fit
 
 
+
 # (4.1) Diagnostic for MODEL 1 --------------------------------------------
 
 chainArray <- mod.fit$BUGSoutput$sims.array # extraxt chains
+library(coda)
+coda.fit <- as.mcmc(mod.fit)
+coda::autocorr.plot(coda.fit)
+coda::autocorr.diag(coda.fit)
+coda::effectiveSize(coda.fit)
 
-mod.fit$BUGSoutput$
+coda::traceplot(coda.fit)
 
+
+
+coda::gelman.diag(coda.fit)
+coda::gelman.plot(coda.fit)
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink")
 ## (2.1) all p_{i} saved in high resolution images
@@ -377,8 +389,7 @@ saving('images/model1/mcmc_acf.png',w=5220,h=2700,
        the.figure = mcmc_acf(chainArray,
                                facet_args = list(labeller = ggplot2::label_parsed)))
 ## (2.2) plot first 4 p_{i}
-mcmc_acf(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
-         facet_args = list(labeller = ggplot2::label_parsed))
+mcmc_acf(chainArray,facet_args = list(labeller = ggplot2::label_parsed))
 
 # (3) mcmc_trace
 color_scheme_set("mix-brightblue-gray")
@@ -387,12 +398,11 @@ saving('images/model1/mcmc_trace.png',w=5220,h=2700,
        the.figure = mcmc_trace(chainArray,
                              facet_args = list(labeller = ggplot2::label_parsed)))
 ## (3.2) plot first 4 p_{i}
-mcmc_trace(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
-         facet_args = list(labeller = ggplot2::label_parsed))
+mcmc_trace(chainArray, facet_args = list(labeller = ggplot2::label_parsed))
 
 
 ## (3.3) closer look to the window
-mcmc_trace(chainArray, pars = "p[1]", window = c(300,500),
+mcmc_trace(chainArray, pars = "p", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))
 
 # (4) mcmc_violin
@@ -421,7 +431,7 @@ myfacets <-
   facet_bg(fill = "gray50", color = NA, ) +
   facet_text(face = "bold", color = 'violetred3', size = 10)
 
-mcmc_dens_overlay(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+mcmc_dens_overlay(chainArray,par=c("p[6]"),
            facet_args = list(labeller = ggplot2::label_parsed)) +
   plot_bg(fill = "gray90") +
   myfacets
@@ -439,7 +449,11 @@ mcmc_areas(chainArray,
 
 
 
-# (4.2) Inferential finding for Model 1 -----------------------------------------
+# (4.2) Residuals for Model 1 ---------------------------------------------
+
+pm_params1 <- colMeans(chainArray)
+
+# (4.3) Inferential finding for Model 1 -----------------------------------------
 
 chainMat <- mod.fit$BUGSoutput$sims.matrix
 #point estimate
@@ -477,12 +491,19 @@ head(melted_cormat)
 
 ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
   geom_tile(color = "white")+
-  scale_fill_viridis(limit = c(-1,1), space = "Lab", 
-                       name="Pearson\nCorrelation", discrete=FALSE) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Pearson\nCorrelation") +
   theme_minimal()+ 
   theme(axis.text.x = element_text(angle = 45, vjust = 1, 
                                    size = 10, hjust = 1))+
   coord_fixed()
+
+library("corrplot")
+Cor = cor(congo[unlist(lapply(congo, is.numeric))])
+corrplot(Cor, type="upper", method="ellipse", tl.pos="d")
+corrplot(Cor, type="lower", method="number", col="black", 
+         add=TRUE, diag=FALSE, tl.pos="n", cl.pos="n")
 
 # (5.2) Develop Model 2 ------------------------------------------
 
@@ -490,68 +511,144 @@ n <- congo$total_cases # tries
 r <- congo$total_deaths # number of success (unfortunately...)
 GAM <- congo$GAM
 STG <- congo$stunted_growth
+MAS <- congo$MAS
+MAM <- congo$MAM
+FeFA <- congo$malnutrition_among_FeFAs
 pop <- congo$population_estimate
 N <- nrow(congo)
 
-congo.jags2 <- list("r", "n", "N","GAM","STG","pop")
-model2 <- function() {
-  # Likelihood
+#congo.jags2 <- list("r", "n", "N","GAM","STG", "FeFA","MAS","MAM", "pop")
+#model2 <- function() {
+#  # Likelihood
+#  for(i in 1:N){
+#    r[i] ~ dbinom(p[i], n[i]) #Model
+#    logit(p[i]) <- beta1[i] + beta2[i]*GAM[i] + beta3[i]*STG[i] +
+#      beta4[i]*FeFA[i] + beta5[i]*MAS[i] + beta6[i]*MAM[i] + beta7[i]*pop[i] #link
+#  }
+#  
+#  #Priors
+#  for (i in 1:N){ 
+#    beta1[i] ~ dnorm(mu,tau) # pooling
+#    beta2[i] ~ dnorm(mu,tau) # pooling
+#    beta3[i] ~ dnorm(mu,tau) # pooling
+#    beta4[i] ~ dnorm(mu,tau) # pooling
+#    beta5[i] ~ dnorm(mu,tau) # pooling
+#    beta6[i] ~ dnorm(mu,tau) # pooling
+#    beta7[i] ~ dnorm(mu,tau) # pooling
+#    
+#  }
+#  
+#  mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
+#  tau ~ dgamma(0.001, 0.001) #vague tau(precision) prior 
+#  
+#  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse sqared of the precision (tau)
+#  pop.mean <- exp(mu) / (1 + exp(mu))
+#}
+
+# Starting values
+#mod.inits2 = function(){
+#  list(tau = 1,
+#       mu = 0)
+#}
+
+## (5.2.1)ANOTHER APPROACH BUT DOESN'T WORK-------------------------------------------
+
+n <- congo$total_cases # tries 
+r <- congo$total_deaths # number of success (unfortunately...)
+STG <- congo$stunted_growth
+MAS <- congo$MAS
+GAM <- congo$GAM
+MAM <- congo$MAM
+FeFA <- congo$malnutrition_among_FeFAs
+pop <- congo$population_estimate
+N <- nrow(congo)
+
+congo.jags2.1 <- list("r", "n", "N","GAM", "STG", 'FeFA')
+
+model2.1 <- function(){
+##likelihood
   for(i in 1:N){
     r[i] ~ dbinom(p[i], n[i]) #Model
-    logit(p[i]) <- beta1[i] + beta2[i]*GAM[i] + beta3[i]*STG[i] + beta4[i]*pop[i]  #link
+    logit(p[i]) <- beta[1] + beta[2]*GAM[i] + beta[3]*STG[i] + beta[4]*FeFA[i] #link
+    #logit(p[i]) <- beta[1] + beta[2]*GAM[i] #link
+    #logit(p[i]) <-beta[1]*GAM[i] #link
   }
-  
-  #Priors
-  for (i in 1:N){ 
-    beta1[i] ~ dnorm(mu,tau) # pooling
-    beta2[i] ~ dnorm(mu,tau) # pooling
-    beta3[i] ~ dnorm(mu,tau) # pooling
-    beta4[i] ~ dnorm(mu,tau) # pooling
-    
-  }
+##prior
+  #for (j in 1:4){ for (i in 1:N){ beta[j,i]~dnorm( mu, tau) } }
+  for (j in 1:4){ beta[j]~dnorm( mu, tau) } 
   
   mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
   tau ~ dgamma(0.001, 0.001) #vague tau(precision) prior 
   
-  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse sqared of the precision (tau)
+  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse squared of the precision (tau)
   pop.mean <- exp(mu) / (1 + exp(mu))
+
 }
 
+
 # Starting values
-mod.inits2 = function(){
-  list(beta1 = rep(0,N),
-       beta2 = rep(0,N),
-       beta3 = rep(0,N),
-       beta4 = rep(0,N),
-       tau = 1,
+mod.inits2.1 = function(){
+  list(tau = 1e3,
        mu = 0)
 }
 
 # Run JAGS
 set.seed(1618216)
-mod.fit2 <- jags(data = congo.jags2,                            
-                 model.file = model2, inits = mod.inits2,          
-                 parameters.to.save = c("p","sigma","mu","pop.mean", "beta1", "beta2", "beta3"),                  
+mod.fit2.1 <- jags(data = congo.jags2.1,                            
+                 model.file = model2.1, inits = mod.inits2.1,          
+                 parameters.to.save = c("p","sigma","mu","pop.mean", "beta"),                  
                  n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
-mod.fit2
+mod.fit2.1
 
 
-# (5.3) Diagnostic for MODEL 1 --------------------------------------------
+# ## (5.2.2) MODEL PREDICTION  --------------------------------------------
+# vediamo da dove vengono queste probabilità... come sono state calcolate?????
 
-chainArray <- mod.fit$BUGSoutput$sims.array # extraxt chains
+chainMatix2.1 <- mod.fit2.1$BUGSoutput$sims.matrix # extraxt chains
+pm_coeff <- colMeans(chainMatix2.1) #posterior mean of the coefficients betas
 
-mod.fit$BUGSoutput$
-  
-  np_cp <- nuts_params(mod.fit)
+
+exp_comp <- function(x1,x2,x3) 1/(1+exp(-(-5.56819741+0.12126469*x1+0.08479912*x2+0.29248419*x3)))
+est.probs <- rep(1,N)
+for (n in 1:nrow(congo)) est.probs[n] <- exp_comp(congo$GAM[n],congo$stunted_growth[n],congo$malnutrition_among_FeFAs[n])
+
+X = cbind('est.probs'=est.probs, 'JAGS.probs' = pm_coeff[7:23])
+X
+
+old.probs <- congo$total_deaths / congo$total_cases
+
+plot(old.probs - est.probs, ylab='resid', col='red', pch=20, 
+     main=c('Residuals', 'Scatter Plot'))
+plot(est.probs, old.probs)
+
+
+mean(pm_coeff[1:3,1])
+yhat = rep(posterior_mean_par[4:20], 1)
+
+
+resid = (congo$total_deaths / congo$total_cases) - yhat
+
+plot(resid)
+plot(jitter(yhat),resid)
+congo$total_deaths
+var(redis[])
+
+summary(chainArray2.1)
+
+beta
+
+# (5.3) Diagnostic for MODEL 2 --------------------------------------------
+
+chainArray <- mod.fit2.1$BUGSoutput$sims.array # extraxt chains
 
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink")
 ## (2.1) all p_{i} saved in high resolution images
-saving('images/model1/mcmc_acf.png',w=5220,h=2700,
+saving('images/model2/mcmc_acf_2.png',w=5220,h=2700,
        the.figure = mcmc_acf(chainArray,
                              facet_args = list(labeller = ggplot2::label_parsed)))
 ## (2.2) plot first 4 p_{i}
-mcmc_acf(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+mcmc_acf(chainArray,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
          facet_args = list(labeller = ggplot2::label_parsed))
 
 # (3) mcmc_trace
@@ -561,12 +658,12 @@ saving('images/model1/mcmc_trace.png',w=5220,h=2700,
        the.figure = mcmc_trace(chainArray,
                                facet_args = list(labeller = ggplot2::label_parsed)))
 ## (3.2) plot first 4 p_{i}
-mcmc_trace(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
+mcmc_trace(chainArray,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
            facet_args = list(labeller = ggplot2::label_parsed))
 
 
 ## (3.3) closer look to the window
-mcmc_trace(chainArray, pars = "p[1]", window = c(300,500),
+mcmc_trace(chainArray, pars = "p[2]", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))
 
 # (4) mcmc_violin
@@ -578,14 +675,13 @@ saving('images/model1/mcmc_violin.png',w=5220,h=2700,
                                 probs = c(0.1, 0.5, 0.9)) + 
          panel_bg(color = "gray20", size = 1, fill = "pink")) 
 ## (4.2) plot first 4 p_{i}
-mcmc_violin(chainArray, par=c("p[1]","deviance","p[3]","p[4]"),
+mcmc_violin(chainArray, par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
             facet_args = list(labeller = ggplot2::label_parsed),
-            probs = c(0.1, 0.5, 0.9)) +
-  myfacets
+            probs = c(0.1, 0.5, 0.9)) + myfacets
 
 
 # (5) mcmc_density
-color_scheme_set("pink")
+color_scheme_set("viridis")
 ## (5.1) all p_{i} saved in high resolution images
 saving('images/model1/mcmc_density.png',w=5220,h=2700,
        the.figure = mcmc_dens(chainArray,
@@ -595,21 +691,54 @@ myfacets <-
   facet_bg(fill = "gray50", color = NA, ) +
   facet_text(face = "bold", color = 'violetred3', size = 10)
 
-mcmc_dens_overlay(chainArray,par=c("p[1]","p[2]","p[3]","p[4]"),
-                  facet_args = list(labeller = ggplot2::label_parsed)) +
-  plot_bg(fill = "gray90") +
-  myfacets
+mcmc_dens_overlay(chainArray,par=c("beta[1]"),
+                  facet_args = list(labeller = ggplot2::label_parsed))+
+  xlab(expression(beta ["1"])) + 
+  panel_bg(fill = "grey70")
+
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
+color_scheme_set("pink")
+saveGIF ({
+  # (3) mcmc_trace
+  for (m in 1:N){
+    plot(mcmc_dens_overlay(chainArray,par=c(paste("p[",m,"]",sep='')),
+                    facet_args = list(labeller = ggplot2::label_parsed)) +
+           xlab(paste('p',m))) 
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "pi_density.gif")
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
+
+
 
 color_scheme_set("green")
 plot_title <- ggtitle("Posterior distributions",
                       "with medians & 90% intervals")
 mcmc_areas(chainArray,
-           pars=c("p[1]", "p[10]", "p[11]"),
+           pars=c("p[2]", "p[4]", "p[7]"),
            prob = 0.9, point_est = 'median') + plot_title
 
 mcmc_areas(chainArray,
            pars=c("deviance"),
-           prob = 0.9, point_est = 'median') + plot_title
+           prob = 0.9, point_est = 'median') + ggtitle("Devinace Posterior distribution",
+                                                       "with medians & 90% intervals")
+# Using CODA
+coda.fit2.1 <- as.mcmc(mod.fit2.1)
+
+coda::traceplot(coda.fit2.1)
+
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
+color_scheme_set("mix-brightblue-gray")
+saveGIF ({
+  # (3) mcmc_trace
+  for (m in 1:N){
+    plot(mcmc_trace(chainArray,par=c(paste("p[",m,"]",sep='')),
+                    facet_args = list(labeller = ggplot2::label_parsed))+
+           ylab(paste('p',m)) ) 
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "pi_traceplot.gif")
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
 
 # (5.4) Inferential finding for Model 2 -----------------------------------------
 
@@ -668,4 +797,8 @@ paste("Mean Lower Bound:", round(quantile(mean.output, c(0.025)),3),
 
 paste("SD Lower Bound:", round(quantile(sd.output, c(0.025)),3),
       "SD Upper Bound:", round(quantile(sd.output, c(0.975)),3))
+
+
+
+
 

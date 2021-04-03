@@ -67,6 +67,9 @@ library(kableExtra)
 library(gridExtra)
 library(reshape2)
 library(viridis)
+library(coda)
+library(corrplot)
+
 
 dir.create("images", showWarnings = TRUE) # directory to images
 dir.create("images/model1", showWarnings = TRUE) # directory to images
@@ -118,7 +121,7 @@ fix.NA <- function(dataset,first,second=NA){
 
 The __fix.NA.2()__ is another function used to perform data cleaning and infer NAs. It takes in input three parameters:
 
-* _dataset_ = the dataset oto be processed,
+* _dataset_ = the dataset to be processed,
 
 * _col.name_ = the column on which it is necessary to fix NA values,
 
@@ -419,9 +422,9 @@ A Beta(1,1) distribution as been used as standard-non-informative prior for $p_{
 
 In order to make inference on the $p_{i}$ the model has been written in order to be compatible for JAGS (Just Another Gibbs Sampler).
 
-### <span style="color: CornflowerBlue;"> 2.1)  Prepare the data for JAGS </span>
+### <span style="color: CornflowerBlue;"> 2.1) JAGS Model 1 </span>
 
-Since doesn't deal with dataframes it is necessary to store all the required variables into lists.
+Since JAGS does not deal with dataframes it is necessary to store all the required variables into lists.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 n <- congo$total_cases # tries 
@@ -430,89 +433,129 @@ N <- nrow(congo)
 congo.jags <- list("r", "n", "N")
 ```
 
-### <span style="color: CornflowerBlue;"> 2.2) JAGS Model 1 </span>
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 # Model
 model <- function() {
   for(i in 1:N){
-    p[i] ~ dbeta(1.0, 1.0) # Prior
-    r[i] ~ dbinom(p[i], n[i]) # Model
+    r[i] ~ dbinom(p, n[i]) # Model
   }
+  p ~ dbeta(1.0, 1.0) # Prior
 }
 
 # Starting values
 mod.inits = function(){
-  list("p" = rep(0.1,N))
+  list("p" = rbeta(1, 1/2, 1/2))
 }
-# Define parameters of interest
-mod.params <- c("p")
 
 # Run JAGS
 set.seed(1618216)
 mod.fit <- jags(data = congo.jags,                            
                 model.file = model, inits = mod.inits,          
-                parameters.to.save = mod.params,                  
+                parameters.to.save = c("p"),                  
                 n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 ```
 
 
-### <span style="color: CornflowerBlue;"> 2.3) Output & Diagnostic </span>
+### <span style="color: CornflowerBlue;"> 2.2) Output & Convergence Diagnostic </span>
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 mod.fit
 ```
 
-One way to check if the MCMC performed on JAGS can be trusted it is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs (this can be performed by going inside and BUGSoutput$sims.array) and then use different plot representation to inspect sampling behavior and assess mixing across chains and convergence.
+One way to check if the MCMC performed on JAGS can be trusted it is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs (this can be performed by going inside the __JAGS output__ and retrieve the __sims.array__ ) and then use different plot representation to inspect sampling behavior and assess convergence.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainArray <- mod.fit$BUGSoutput$sims.array # get the chain
-
-myfacets <-
-  facet_bg(fill = "gray30", color = NA, ) +
-  facet_text(face = "bold", color = "skyblue", size = 10)
 ```
 
-A useful diagnostic plot is the trace plot, which actually is a time series plot of the Markov chains. In the trace plot is possible to see the evolution of the parameter vector over the iterations of one or many Markov chains. As 
-can be seen from __Figure 2__, all the chains seem to be exploring the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
-For that reason, it could be possible to assess that there can not be seen any evidence that the chain has not achieved stationarity.
+#### <span style="color: turquoise;"> 2.2.1) TracePlot & Gelman-Rubin </span>
+
+A useful diagnostic plot is the trace plot, which actually is a time series plot of the Markov chains. In the trace plot is possible to see the evolution of the parameter vector over the iterations of one or many Markov chains.
+If a chain is stationary, it should showing any long-term trends, meaning that the average value of the chain should be almost flat. Therefore, by looking at the __Figure 2__, it seems so. This means that if we try, for example, to estimate $p$ by using the first 500 iterations we are going to get
+a similar result that we would get if we try to estimate the $p$ by using, for example, iterations from 1000 to 1500. Moreover, it also seems that all the chains explore the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 2: Trace Plot"}
+
+# this is variable is used to change the aspect of some plots.
+myfacets <-
+  facet_bg(fill = "gray30", color = NA, ) +
+  facet_text(face = "bold", color = "skyblue", size = 10) 
+
 # (1) mcmc_trace
 color_scheme_set("mix-brightblue-gray")
 ## (1.1) plot first 4 p_{i}
-mcmc_trace(chainArray,par=c("p[1]","deviance","p[3]","p[4]"),
-         facet_args = list(labeller = ggplot2::label_parsed)) +
+mcmc_trace(chainArray, facet_args = list(labeller = ggplot2::label_parsed)) +
   myfacets
 
 ```
 
-But the plot is too crowded to help us diagnose divergences. We may however zoom in to investigate, using the window argument:
-Since the plot is still too confused, it could help our diagnostic to have a closer look to it by using the _"window"_ parameter inside the _"mcmc_trace function"_ and see how every chain behaves. 
+However, since the plot is still too confused, it could help our diagnostic to have a closer look to it by using the _"window"_ parameter inside the _"mcmc_trace function"_ and see how every chain behaves. 
 As __Figure 3__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationarity.
 
-
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 3: Trace Plot"}
-mcmc_trace(chainArray, pars = "p[1]", window = c(300,500),
+mcmc_trace(chainArray, pars = "p", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 ```
 
-Another relevant diagnostic analysis can be done by checking the autocorrelation plots. It is possible to visualize the autocorrelation by calling the __mcmc_acf__ function. This funtion shows the autocorrelation for each Markov chain separately up to a used-defined number of lags for each preselected parameters. What is expected is to see a low autocorrelation since it is a signal of convergence. As it possible to see from the __Figure 4__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
+Since __Trace PLots__ provide an informal diagnostic about the 
+convergence of the chains, we coul relay on a better diagnostic called
+__ Gelman & Rubin diagnostic__. This diagnostic calculates the variability
+within/inside the chains and compares that to the variability between the
+chains [(Gelman & Rubin)](https://blog.stata.com/2016/05/26/gelman-rubin-convergence-diagnostic-using-multiple-chains/).
+We can actually compute this diagnostic by calling the __gelman.diag()__ funciton
+implemented in __coda library__. The __Potential Scale Factor__ is the 
+statistics that tells us about the chain convergence should be close to 1.
+Values farway from 1 indicates that the chains haven't reached yet convergence.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 4: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+coda.fit <- as.mcmc(mod.fit)
+gelman.diag(coda.fit)
+```
+As we can see, the chains reached convergence since this value is 1.
+We can also plot this diagnostic by using the __gelman.plot()__ function.
+It shows how the "_shrinkage_ factor" changes once we add iterations to the chains.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 4: Gelman-Rubin Plot"}
+coda.fit <- as.mcmc(mod.fit)
+gelman.plot(coda.fit)
+```
+
+#### <span style="color: turquoise;"> 2.2.2) Autocorrelation </span>
+
+Another relevant diagnostic analysis can be done by checking the autocorrelation plots.Autocorrelation is number between -1 and 1 and it measures how "_linearly_ dependent" the current value of the chains are to past values (== Lags). See [Appendix A](#A) for autocorrelation explanation.
+
+For example the $0^{th}$ lag as a perfect Autocorrelation with itself (==1).
+Instead, with the $1_{st}$ lag it has a value of around 0.5 or slightly more. And, as we go further and further, the values become less correlated. We can also take a look at the values of the autocorrelation values them selves by using the __autocorr.diag()__ function in __coda__. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. 
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+autocorr.diag(coda.fit)
+```
+
+In fact, by calling the previous function we see that at the $5_{th}$ lag the autocorrelation for $p$ already goes to zero.
+Autocorrelation is very important because it tells us how much information is available in each Markov chain. Sampling $1e4$ iteration from a highly correlated Markov chain yields less information about the stationary distribution than we would obtain from $1e4$ independently drawn from the stationary distribution.
+
+Autocorrelation is very important when we go to calculate the __effective sample size__ in the chain. The Monte Carlo __effective sample size__ tells us how many independent samples from the stationary distribution you should drawn in order to get the same information from our MCMC. I.e. it is the 
+sample size that we have kept from the Monte Carlo. __Figure 4__ shows the autocorrelation for all the three chains. As can be seen from the figures, the autocorrelation drops pretty fast to zero (after only few lags, 2-3) meaning that there is not autocorrelation among different values in the chains. This is
+possible since JAGS already drops-auto autocorrelated samples by performing jumps. In fact, the effective sample size for $p$ is not $1e4$ but lower. But how much lower? in the __coda package__ there is the function called __effectiveSize()__ which tells us the effective sample size. In this case, for $p$ is of $5400$. Is this number big enough to create reliable 95% posterior intervals ? In order to now that we can relay on the __Raftery and Lewis diagnostic__  (also implemented in the __coda package__) that tells us how many iterations in our chain we need in order to be 95% confident that we are estimating the $0.025$ quantile  of the distribution to an accuracy of $0.005$. In this case we need $4022$ so, we are good enough.
+
+It is possible to visualize the autocorrelation by calling the __mcmc_acf__ function. This function shows the autocorrelation for each Markov chain separately up to a user-defined number of lags. What is expected is to see a low autocorrelation since it is a signal of convergence. As it possible to see from the __Figure 5__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 5: Autocorelation Plots"}
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink") # set color
 ## (2.1) plot first 4 p_{i}
-mcmc_acf(chainArray,par=c("p[1]","deviance","p[3]","p[4]"),
-         facet_args = list(labeller = ggplot2::label_parsed))+
+mcmc_acf(chainArray, facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 
 ```
 
-Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples. These are shown in __Figure 5__ reported here below.
+#### <span style="color: turquoise;"> 2.2.3) Posterior Distributions </span>
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 5: Density Overlay Plot"}
+Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples. These are shown in __Figure 6__ reported here below.
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 6: Density Overlay Plot"}
 # (3) mcmc_density
 color_scheme_set("pink")
 ## (3.1) plot first 4 p_{i}
@@ -520,49 +563,30 @@ myfacets <-
   facet_bg(fill = "gray50", color = NA, ) +
   facet_text(face = "bold", color = 'white', size = 10)
 
-mcmc_dens_overlay(chainArray,par=c("p[1]","deviance","p[3]","p[4]"),
-           facet_args = list(labeller = ggplot2::label_parsed)) +
+mcmc_dens_overlay(chainArray, facet_args = list(labeller = ggplot2::label_parsed)) +
   myfacets
 
 ```
 
-It is also possible to have a look at the posterior distribution of the parameters as shown in __Figures 6 and 7__
-
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 6: Posterior Density Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 7: Posterior Density Plot"}
 # (4) areas plot
-# (4.1) areas plot
 color_scheme_set("green")
 plot_title <- ggtitle("Posterior distributions",
-                      "with medians & 90% intervals")
-mcmc_areas(chainArray,
-           pars=c("p[1]", "p[10]", "p[11]"),
-           prob = 0.9, point_est = 'median') + plot_title
-```
+                      "with Median & 90% Intervals")
+chain_p <- mcmc_areas(chainArray, pars="p", prob = 0.9, point_est = 'median') + plot_title
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 7: Deviance Posterior Density Plot"}
-## (4.2) deviance area
-mcmc_areas(chainArray,
+chain_dev <- mcmc_areas(chainArray,
            pars=c("deviance"),
            prob = 0.9, point_est = 'median') + plot_title
 
+ggarrange(chain_p, chain_dev,
+          ncol = 2, nrow = 1)
 ```
 
-To have a look at the distribution it is also possible to use the violin plot also implemented in the bayesplot library.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 8: Violin Plot"}
-# (4) mcmc_violin
-color_scheme_set("green")
-## (4.1) plot first 4 p_{i}
-mcmc_violin(chainArray, par=c("p[1]","deviance","p[3]","p[4]"),
-            facet_args = list(labeller = ggplot2::label_parsed),
-            probs = c(0.1, 0.5, 0.9)) + 
-  panel_bg(color = "gray20", size = 1) +
-  myfacets
-```
+### <span style="color: CornflowerBlue;"> 2.4) Inferential finding Model 1 </span>
 
-### <span style="color: CornflowerBlue;"> 2.4) Inferential finding for Model 1 </span>
-
-Let's compute the point estimate for the $p_{i}$
+Let's compute the point estimate for the $p$
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainMat <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
@@ -590,35 +614,28 @@ p.HPD.jags
 
 In Model 1 it has been assumed that the true death probabilities are independent for each sub-area however, this is actually not too realistic. In fact, it is better to assume dependence among them and that they could be similar in some ways. For that reason a more realist _Statistical Model_ has been implemented to describe present behavior and/or predict future performances. The model is composed by three components: the well known response variable $Y_{i}$ (the probability of death), the explanatory variables $X_{i}$ and a link function used to connect the stochastic part ($X_{i}$ variable) and the deterministic part ($X_{i}$) of the model. In this specific scenario a Generalized Linear Model (GLM), which is an extension of the Normal Linear Regression Model based on exponential family distributions. Since it has been used a Binomial distribution this model is hence suitable for this kind of analysis.
 
-In order to understand which variables can actually better explain the variability of the dependent variable the Pearson Correlation Coefficient has been computed among all the Numerical variables and the results are returned by __Figure 9__:
+In order to understand which variables can actually better explain the variability of the dependent variable the Pearson Correlation Coefficient has been computed among all the Numerical variables and the results are returned by __Figure 8__:
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 9: Heatmap"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 8: Heatmap"}
 
 # (1) Code to plot HEATMAP
 
-## (1.1) Prepare the correlation matrix to be used in ggplot2
-cormat <- round(cor(congo[unlist(lapply(congo, is.numeric))]),2)
-melted_cormat <- melt(cormat, na.rm = TRUE)
-
-## (1.2) Plot the object
-ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
-  geom_tile(color = "white")+
-  scale_fill_viridis(limit = c(-1,1), space = "Lab", 
-                       name="Pearson\nCorrelation", discrete=FALSE) +
-  theme_minimal()+ 
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
-                                   size = 10, hjust = 1))+
-  coord_fixed() + 
-  panel_bg(color = "gray20", size = 1)
-
+Cor = cor(congo[unlist(lapply(congo, is.numeric))])
+corrplot(Cor, type="upper", method="ellipse", tl.pos="d")
+corrplot(Cor, type="lower", method="number", col="black", 
+         add=TRUE, diag=FALSE, tl.pos="n", cl.pos="n")
 ```
+<br><br>
+
+As it is possible to see from figure above, three variables seems to be more influent in explaining the variance of the dependent variable: __"GAM", "stunned_growth" and "malnutrition_among_FeFAs"__. However, once could ask why neither __MAM__ nor __MAS__ have been included in the model since they are both highly negatively correlated with __total_deaths__. This is due to the fact that they actually are strongly correlated with the __GAM__ variable (respectively 0.84 and 0.88) meaning that, these features, combined together do not add significantly information regarding the dependent variable but they 
+actually only make the model more complex. For that reason only __GAM__ has been included since it has a stronger correlation with the dependent variable compared to the other two.
 
 Hence, the structure of the model is:
 
 \begin{aligned}
  r_{i} &\sim Binomial(p_{i},n_{i})\label{eq:1} \\
- \log(p_i/(1-p_i) &= \sum^{4}_{j=1}\beta_{j}x_{ij} = \beta_{1} +
- \beta_2GAM_{i} + \beta_{3}STG_{i} + \beta_{4}pop_{i},\\
+ \log(p_i/(1-p_i) &= \beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij} = \beta_{0} +
+ \beta_{1}GAM_{i} + \beta_{2}STG_{i} + \beta_{3}pop_{i},\\
  &for \;\; i = 1,2,...,n\label{eq:2}\\
  \\
  \beta_{i} &\sim Normal(\mu,\tau)
@@ -631,7 +648,7 @@ r_i &\sim Binomial(\frac{odds_{i}}{1+odds_{i}},n_i) \\
 
 odds_{i} &= \frac{p_{i}}{1-p_{i}} \\
 
-\log(odds_{i}) &= \beta_{1} + \beta_2GAM_{i} + \beta_{3}STG_{i} + \beta_{4}pop_{i}
+\log(odds_{i}) &= \beta_{0} + \beta_{1}GAM_{i} + \beta_{2}STG_{i} + \beta_{3}pop_{i}
 \end{aligned}
 
 Standard-non-informative priors are specified both for population mean (logit) probability of death ($\mu$) and precision($\tau$).
@@ -642,7 +659,7 @@ Standard-non-informative priors are specified both for population mean (logit) p
 \frac{1}{\tau^{2}} &\sim Gamma(10^{-3}, 10^{-3})
 \end{aligned}
 
-### <span style="color: CornflowerBlue;"> 2.4) JAGS Model 2 </span>
+### <span style="color: CornflowerBlue;"> 3.1) JAGS Model 2 </span>
 
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
@@ -650,49 +667,32 @@ n <- congo$total_cases # tries
 r <- congo$total_deaths # number of success (unfortunately...)
 GAM <- congo$GAM
 STG <- congo$stunted_growth
-pop <- congo$population_estimate
+FeFA <- congo$malnutrition_among_FeFAs
 N <- nrow(congo)
 
-congo.jags2 <- list("r", "n", "N","GAM","STG","pop")
+congo.jags2 <- list("r", "n", "N","GAM","STG","FeFA")
 model2 <- function() {
-  # Likelihood
+  
+  # (1) Likelihood
   for(i in 1:N){
     r[i] ~ dbinom(p[i], n[i]) #Model
-    logit(p[i]) <- beta1[i] + beta2[i]*GAM[i] + beta3[i]*STG[i] + beta4[i]*pop[i]  #link
+    logit(p[i]) <- beta[1] + beta[2]*GAM[i] + beta[3]*STG[i] + beta[4]*FeFA[i] #link
   }
   
-  #Priors
-  for (i in 1:N){ 
-    beta1[i] ~ dnorm(mu,tau) # pooling
-    beta2[i] ~ dnorm(mu,tau) # pooling
-    beta3[i] ~ dnorm(mu,tau) # pooling
-    beta4[i] ~ dnorm(mu,tau) # pooling
-    
-    ## (2)ANOTHER APPROACH BUT DOESN'T WORK
-    ##likelihood
-    #for(i in 1:N){
-    #  r[i] ~ dbinom(p[i], n[i]) #Model
-    #  logit(p[i]) <- beta[1,i] + beta[2,i]*GAM[i] + beta[3,i]*STG[i] + beta[4,i]*pop[i]  #link
-    #}
-    ##prior
-    #for (i in 1:N){ for (j in 1:4){ beta[j,i]~dnorm( mu, tau) } }
-    
-  }
+  # (2) Priors
+  # betas start from 1 and not from 0 to be in concordance with JAGS notation
+  for (j in 1:4){ beta[j]~dnorm( mu, tau) }  # pooling
+
+  mu ~ dnorm(0.0, 1e-6) # vague mean Prior -->  there is e-06 since in JAGS it is necessary to pass the PRECISION (which is the inverse of the sd). Lower the Precision higher the SD
+  tau ~ dgamma(0.001, 0.001) # vague tau (Precision)
   
-  mu ~ dnorm(0.0, 1e-6) # vague mean Prior --> abbiamo e-06 perché in jags il secondo valore della normale è la PRECISION che è l'inverso della var. lower the precision higher the sd
-  tau ~ dgamma(0.001, 0.001) #vague tau(precision) prior 
-  
-  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse sqared of the precision (tau)
+  sigma <- 1 / sqrt(tau) # we return the sd that is the inverse squared of the Precision (tau)
   pop.mean <- exp(mu) / (1 + exp(mu))
 }
 
 # Starting values
 mod.inits2 = function(){
-  list(beta1 = rep(0,N),
-       beta2 = rep(0,N),
-       beta3 = rep(0,N),
-       beta4 = rep(0,N),
-       tau = 1,
+  list(tau = 1e3,
        mu = 0)
 }
 
@@ -700,16 +700,49 @@ mod.inits2 = function(){
 set.seed(1618216)
 mod.fit2 <- jags(data = congo.jags2,                            
                  model.file = model2, inits = mod.inits2,          
-                 parameters.to.save = c("p","sigma","mu","pop.mean", "beta1", "beta2", "beta3"),                  
+                 parameters.to.save = c("p","sigma","mu","pop.mean", "beta"),         
                  n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
 
 ```
 
-### <span style="color: CornflowerBlue;"> 2.3) Output & Diagnostic for Model 2 </span>
+### <span style="color: CornflowerBlue;"> 3.2) Output & Convergence Diagnostic </span>
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 mod.fit2
 ```
+
+As it is possible seen from the output table returned by JAGS, the estimated death probabilities per each Area quite high. But where are they come from? Since it has been used a Binomial with a prob of success $p_{i}$ and the logit of each $p_{i}$ has been modeled as a linear model, this leads to an exponential form equal to:
+
+\begin{aligned}
+  E(y_{i}) &= p_{i} = \frac{e^{\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij}}}{1 +
+  e^{\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij}} }
+\end{aligned}
+
+Now, if we invert the _link function_ by dividing the numerator and the denominator by the numerator we get better better expression for the $y_{i}$:
+
+\begin{aligned}
+  E(y_{i}) &= \frac{1}{1 + e^{-(\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij)}} } \\
+  
+  E(y_{i}) &= \frac{1}{1 + e^{-(-5.568 + 0.121 \times GAM_{i} + 0.085 \times STG_{i} + 0.292 \times FeFA_{i})} }
+\end{aligned}
+
+Now, if someone substitute each x_{i} with the original values and multiply them by the \beta_{s} coefficinets, the results will be the already seen estimated probabilities of death for each region. This is shown by the table reported below:
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+
+chainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # extraxt chains
+pm_coeff <- colMeans(chainMatrix2) #posterior mean of the coefficients betas
+
+exp_comp <- function(x1,x2,x3) 1/(1+exp(-(-5.56819741+0.12126469*x1+0.08479912*x2+0.29248419*x3)))
+est.probs <- rep(1,N)
+for (n in 1:nrow(congo)) est.probs[n] <- exp_comp(congo$GAM[n],congo$stunted_growth[n],congo$malnutrition_among_FeFAs[n])
+
+X = round(cbind('est.probs'=est.probs, 'JAGS.probs' = pm_coeff[7:23]),4)
+X
+
+```
+
+#### <span style="color: turquoise;"> 3.2.1) TracePlot & Gelman-Rubin </span>
 
 One way to check if the MCMC performed on JAGS can be trusted it is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs (this can be performed by going inside and BUGSoutput$sims.array) and then use different plot representation to inspect sampling behavior and assess mixing across chains and convergence.
 
@@ -722,56 +755,48 @@ myfacets <-
 ```
 
 A useful diagnostic plot is the trace plot, which actually is a time series plot of the Markov chains. In the trace plot is possible to see the evolution of the parameter vector over the iterations of one or many Markov chains. As 
-can be seen from __Figure 10__, all the chains seem to be exploring the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
+can be seen from __Figure 9__, all the chains seem to be exploring the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
 For that reason, it could be possible to assess that there can not be seen any evidence that the chain has not achieved stationarity.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 10: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 9: Trace Plot"}
 # (1) mcmc_trace
 color_scheme_set("mix-brightblue-gray")
 ## (1.1) plot first 4 p_{i}
-mcmc_trace(chainArray2,par=c("p[1]","p[2]","p[3]","p[4]"),
+mcmc_trace(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
          facet_args = list(labeller = ggplot2::label_parsed)) +
   myfacets
 
 ```
+Instead, in the animated figure below it is possible to see the __Traceplots__ for the estimated probabilities $p_{i}$:
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 11: Trace Plot"}
-# (1) mcmc_trace
-color_scheme_set("mix-brightblue-gray")
-## (1.1) plot first 4 p_{i}
-mcmc_trace(chainArray2,par=c("deviance","pop.mean","sigma"),
-         facet_args = list(labeller = ggplot2::label_parsed)) +
-  myfacets
-
-```
-
+![__$p_{i}$ TracePlot animated GIF__](images/pi_traceplot.gif)
 
 But the plot is too crowded to help us diagnose divergences. We may however zoom in to investigate, using the window argument:
 Since the plot is still too confused, it could help our diagnostic to have a closer look to it by using the _"window"_ parameter inside the _"mcmc_trace function"_ and see how every chain behaves. 
-As __Figure 12__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationarity.
+As __Figure 10__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationarity.
 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 12: Trace Plot"}
-mcmc_trace(chainArray2, pars = "p[1]", window = c(300,500),
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 10: Trace Plot"}
+mcmc_trace(chainArray2, pars = "p[2]", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 ```
 
-Another relevant diagnostic analysis can be done by checking the autocorrelation plots. It is possible to visualize the autocorrelation by calling the __mcmc_acf__ function. This function shows the autocorrelation for each Markov chain separately up to a used-defined number of lags for each preselected parameters. What is expected is to see a low autocorrelation since it is a signal of convergence. As it possible to see from the __Figure 13__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
+Another relevant diagnostic analysis can be done by checking the autocorrelation plots. It is possible to visualize the autocorrelation by calling the __mcmc_acf__ function. This function shows the autocorrelation for each Markov chain separately up to a used-defined number of lags for each preselected parameters. What is expected is to see a low autocorrelation since it is a signal of convergence. As it possible to see from the __Figure 11__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 13: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 11: Trace Plot"}
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink") # set color
 ## (2.1) plot first 4 p_{i}
-mcmc_acf(chainArray2,par=c("p[1]","deviance","p[3]","p[4]"),
+mcmc_acf(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
          facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 
 ```
 
-Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples. These are shown in __Figure 14__ reported here below.
+Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples. These are shown in __Figure 12__ reported here below.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 14: Density Overlay Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 12: Density Overlay Plot"}
 # (3) mcmc_density
 color_scheme_set("pink")
 ## (3.1) plot first 4 p_{i}
@@ -779,13 +804,13 @@ myfacets <-
   facet_bg(fill = "gray50", color = NA, ) +
   facet_text(face = "bold", color = 'white', size = 10)
 
-mcmc_dens_overlay(chainArray2,par=c("p[1]","p[10]","p[3]","p[4]"),
+mcmc_dens_overlay(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
            facet_args = list(labeller = ggplot2::label_parsed)) +
   myfacets
 
 ```
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 15: Density Overlay Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 13: Density Overlay Plot"}
 # (3) mcmc_density
 color_scheme_set("pink")
 ## (3.1) plot first 4 p_{i}
@@ -793,51 +818,108 @@ myfacets <-
   facet_bg(fill = "gray50", color = NA, ) +
   facet_text(face = "bold", color = 'white', size = 10)
 
-mcmc_dens_overlay(chainArray2,par=c("deviance","pop.mean","sigma"),
+mcmc_dens_overlay(chainArray2,par=c("deviance","sigma"),
            facet_args = list(labeller = ggplot2::label_parsed)) +
   myfacets
 
 ```
 
+Instead, in the animated figure below it is possible to see the __Density plots__ for the estimated probabilities $p_{i}$:
 
-It is also possible to have a look at the posterior distribution of the parameters as shown in __Figures 16 and 17__
+![__$p_{i}$ Density Plot animated GIF__](images/pi_density.gif)
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 16: Posterior Density Plot"}
+It is also possible to have a look at the posterior distribution of the parameters as shown in __Figures 14 and 15__
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 14: Posterior Density Plot"}
 # (4) areas plot
 # (4.1) areas plot
 color_scheme_set("green")
 plot_title <- ggtitle("Posterior distributions",
                       "with medians & 90% intervals")
 mcmc_areas(chainArray2,
-           pars=c("p[1]", "p[10]", "p[11]"),
+           pars=c("p[2]", "p[4]", "p[7]"),
            prob = 0.9, point_est = 'median') + plot_title
 ```
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 17: Deviance Posterior Density Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 15: Deviance Posterior Density Plot"}
 ## (4.2) deviance area
 mcmc_areas(chainArray2,
            pars=c("deviance"),
-           prob = 0.9, point_est = 'median') + plot_title
-
+           prob = 0.9, point_est = 'median') +
+  ggtitle("Devinace Posterior distribution", "with medians & 90% intervals")
 ```
 
 To have a look at the distribution it is also possible to use the violin plot also implemented in the bayesplot library.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 18: Violin Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 16: Violin Plot"}
 # (4) mcmc_violin
 color_scheme_set("green")
 ## (4.1) plot first 4 p_{i}
-mcmc_violin(chainArray2, par=c("p[1]","deviance","p[3]","p[4]"),
+mcmc_violin(chainArray2, par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
             facet_args = list(labeller = ggplot2::label_parsed),
             probs = c(0.1, 0.5, 0.9)) + 
   panel_bg(color = "gray20", size = 1) +
   myfacets
 ```
 
+### <span style="color: CornflowerBlue;"> 3.3) Inferential finding Model 2 </span>
+
+Let's compute the point estimate for the $p$
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+chainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
+
+p.hat.jags <- colMeans(chainMatrix2)
+p.hat.jags
+```
+
+Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
+
+__Equal Tail Intervals: __
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+cred <- 0.95
+p.ET.jags <- apply(chainMatrix2, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+p.ET.jags
+```
+
+__HPD Intervals: __
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
+p.HPD.jags <- coda::HPDinterval(as.mcmc(chainMatrix2))
+p.HPD.jags
+```
 
 
+## <span style="color: purple;"> 3)  Model Comparison </span>
 
 
+In order to compare models it is possible to use the DIC (Deviance Information Criterion) metric. DIC is a Bayesian method for model comparison and a measure for the prediction error of a model. The lower DIC value the better the model fits the data. 
+
+The deviance D, given a parameter value $\theta$ returns error using the log-likelihood function:
+$D(\theta) = -2  \text{log} * L(data|\theta)$
+
+Once the posterior means are computed, it is possible to measure the deviance as:
+
+$D(\hat{\theta}) = -2 \text{log} * L(data|\hat{\theta})$
+Taking all steps i in the different MCMCs, it is possible to compute an average - posterior mean of the deviance as follows:
+
+$\hat{D} = \frac{1}{M}\sum^{M}_{i=1}D (\theta_{i})$
+
+Now it is possible to compute the effective number of parameters:
+
+$p_{D} = \hat{D} - D(\hat{\theta})$
+
+The DIC is then computed:
+
+$DIC = D(\hat{\theta})- 2 p_{D}$
+
+```{r}
+paste("Model 1 DIC:",round(mod.fit$BUGSoutput$DIC,digits = 3),'         ',"Model 2 DIC",round(mod.fit2$BUGSoutput$DIC,digits = 3))
+```
+Looking at the DIC values, it is clearly shown that there is a significant diffence among them. And in fact the difference is equal to:
+
+```{r}
+paste("DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BUGSoutput$DIC),digits = 3))
+```
 
 
 
@@ -857,76 +939,11 @@ mcmc_violin(chainArray2, par=c("p[1]","deviance","p[3]","p[4]"),
 
 ## <span style="color: green;"> Appendix A</span> {#A}
 
-Since there are two many parameters to be returned, it is not possible to show all of them into a clear importable picture in r Markdown. For that reason all the plots shown before have been saved with a high resolution respectively into the folders __model1__ and __model2__ reachable under the images directory.
 
+\[ ACF(X_{t},X_{t-l}) = \frac{Cov(X_{t},X_{t-l})}{\sqrt{Var(X_{t}) \times Var(X_{t-l})}}
+\]
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, echo=TRUE, results='hide'}
-
-# MODEL 1:
-
-## (1.1) high resolution image TRACE PLOT
-color_scheme_set("mix-brightblue-gray")
-saving(name = 'images/model1/mcmc_trace.png',w=5220,h=2700,
-       the.figure = mcmc_trace(chainArray,
-                             facet_args = 
-                               list(labeller = ggplot2::label_parsed)))
-
-
-## (1.2) high resolution image AUTOCORRELATION PLOT
-color_scheme_set("mix-teal-pink")
-saving('images/model1/mcmc_acf.png',w=5220,h=2700,
-       the.figure = mcmc_acf(chainArray,
-                               facet_args = 
-                               list(labeller = ggplot2::label_parsed)))
-
-## (1.3) high resolution image DENSITY PLOT
-color_scheme_set("green")
-saving('images/model1/mcmc_density.png',w=5220,h=2700,
-       the.figure = mcmc_dens(chainArray,
-                               facet_args = list(labeller = ggplot2::label_parsed)))
-
-## (1.4) high resolution image VIOLIN PLOT
-color_scheme_set("green")
-saving('images/model1/mcmc_violin.png',w=5220,h=2700,
-       the.figure = mcmc_violin(chainArray,
-                                facet_args = list(labeller = ggplot2::label_parsed),
-                                probs = c(0.1, 0.5, 0.9)) + 
-         panel_bg(color = "gray20", size = 1)) 
-
-
-# MODEL 2:
-
-## (2.1) high resolution image TRACE PLOT
-color_scheme_set("mix-brightblue-gray")
-saving(name = 'images/model1/mcmc_trace.png',w=5220,h=2700,
-       the.figure = mcmc_trace(chainArray2,
-                             facet_args = 
-                               list(labeller = ggplot2::label_parsed)))
-
-
-## (2.2) high resolution image AUTOCORRELATION PLOT
-color_scheme_set("mix-teal-pink")
-saving('images/model1/mcmc_acf.png',w=5220,h=2700,
-       the.figure = mcmc_acf(chainArray2,
-                               facet_args = 
-                               list(labeller = ggplot2::label_parsed)))
-
-## (2.3) high resolution image DENSITY PLOT
-color_scheme_set("green")
-saving('images/model1/mcmc_density.png',w=5220,h=2700,
-       the.figure = mcmc_dens(chainArray2,
-                               facet_args = list(labeller = ggplot2::label_parsed)))
-
-## (2.4) high resolution image VIOLIN PLOT
-color_scheme_set("green")
-saving('images/model1/mcmc_violin.png',w=5220,h=2700,
-       the.figure = mcmc_violin(chainArray2,
-                                facet_args = list(labeller = ggplot2::label_parsed),
-                                probs = c(0.1, 0.5, 0.9)) + 
-         panel_bg(color = "gray20", size = 1)) 
-
-```
-
+If the sequence is stationary (as it is), the joint distribution of multiple Xs doesn't change with time shifts, then autocorrelation for two variables doesn't depend on the exact times $t$ and $t-l$ but rather on the distance between them: $l$. This is the reason why the autocorrelation plots are computed in terms of lags. Font: [Autocorrelation](https://d3c33hcgiwev3.cloudfront.net/_dd6d312e631a80339ba1627e1d72b42d_Autocorrelation.pdf?Expires=1617580800&Signature=C0iakoYnGzE7BJ41iur6mM88n5Ep-68RT4-FwiSl01~-NtdzvDKw~qGYDMH~57PeVjb69IxHYwXbAg0JM5i8UGSaIl~euKpQuWpLPqKWm6f-2c4E03xZTqy3kUzuJTAtaBj0VvR59MAt2HZdXCK5kv8Xyy~LonopjZq2f1KGKUQ_&Key-Pair-Id=APKAJLTNE6QMUY6HBC5A)
 
 
 

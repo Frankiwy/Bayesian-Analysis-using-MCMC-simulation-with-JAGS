@@ -500,6 +500,35 @@ p.ET.jags
 p.HPD.c
 p.HPD.jags
 
+res.dat <- round(data.frame('ET2.5'=p.ET.jags[1,],
+                      'ET97.5'=p.ET.jags[2,],
+                      'HPD2.5'=p.HPD.jags[,1],
+                      'HPD97.5'=p.HPD.jags[,2]),4)
+row.names(res.dat)[2] <- "$p$"
+
+my.colors <- c('white',rep('royalblue',2),rep('yellow',2)) # set colors
+
+kbl(res.dat,col.names = NULL) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  add_header_above(c(" ", "Lower(0.25)" = 1, "Upper(0.975)" = 1, "Lower(0.25)" = 1, "Upper(0.975)" = 1),
+                   bold = T, background = alpha(my.colors, 0.2), color = 'red') %>%
+  add_header_above(c(" ", "Equal Tail" = 2, "HPD" = 2),
+                   background = alpha(my.colors[c(1:2,4)],0.2), color = 'black') %>%
+  column_spec(c(2,3), background = alpha(my.colors[2], 0.2)) %>%
+  column_spec(c(4,5), background = alpha(my.colors[4], 0.2)) 
+
+
+
+
+
+
+
+
+
+
+
+
+
 # (5) MODEL 2 Assuming dependencies among areas ---------------------------
 ## herethe Pearson Corr Coeff is computed
 get_upper_tri <- function(cormat){
@@ -528,6 +557,10 @@ Cor = cor(congo[unlist(lapply(congo, is.numeric))])
 corrplot(Cor, type="upper", method="ellipse", tl.pos="d")
 corrplot(Cor, type="lower", method="number", col="black", 
          add=TRUE, diag=FALSE, tl.pos="n", cl.pos="n")
+
+v.names <- c('tot.cases','tot.deaths','tot.cured','pop','MAS','MAM','GAM','STG','FeFA')
+colnames(Cor) <- v.names
+rownames(Cor) <- v.names
 # (5.2) Develop Model 2 ------------------------------------------
 
 n <- congo$total_cases # tries 
@@ -609,6 +642,11 @@ model2.1 <- function(){
 }
 
 
+
+
+
+
+
 # Starting values
 mod.inits2.1 = function(){
   list(tau = 1e3,
@@ -620,7 +658,7 @@ set.seed(1618216)
 mod.fit2.1 <- jags(data = congo.jags2.1,                            
                  model.file = model2.1, inits = mod.inits2.1,          
                  parameters.to.save = c("p","sigma","mu","pop.mean", "beta"),                  
-                 n.chains = 3, n.iter = 10000, n.burnin = 1000, n.thin=5)
+                 n.chains = 3, n.iter = 1e4, n.burnin = 1000, n.thin=5)
 mod.fit2.1
 
 
@@ -742,6 +780,8 @@ setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-J
 
 coda.fit2 <- as.mcmc(mod.fit2.1)
 gelman.diag(coda.fit2[,c(7:23)])
+raftery.diag(coda.fit2)
+effectiveSize(coda.fit2)
 
 coda.fit2[,'p[1]']
 setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
@@ -788,6 +828,39 @@ setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-J
 
 
 
+raftery.diag(coda.fit2.1[,1:2])
+effectiveSize(coda.fit2.1)
+
+
+X
+
+X <- round(data.frame(X),4)
+X.colname <- colnames(X)
+X <- data.frame(t(X))
+colnames(X) <- X.colname
+
+rownames(X) <- paste("$p_{",seq(1:17),"}$",sep='')
+
+X %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = F) %>%
+  row_spec(0, background = alpha("orchid",0.2), color = 'black') %>%
+  scroll_box(height = "430px")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # (5.4) Residuals ---------------------------------------------------------
 
 chainMatix2.1 <- mod.fit2.1$BUGSoutput$sims.matrix # extraxt chains
@@ -814,7 +887,7 @@ plot(probs.post,p.resid)
 
 # (5.5) Inferential finding for Model 2 -----------------------------------------
 
-chainMat2 <- mod.fit2$BUGSoutput$sims.matrix
+chainMat2 <- mod.fit2.1$BUGSoutput$sims.matrix
 #point estimate
 p.hat.jags2 <- colMeans(chainMat2)
 p.hat.jags2
@@ -826,17 +899,39 @@ p.ET.jags2 <- apply(chainMat2, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
 #HPD 
 p.HPD.jags2 <- coda::HPDinterval(as.mcmc(chainMat2))
 
-
+?HPDinterval
 p.hat.c
 p.hat.jags2
 
 p.ET.c
-p.ET.jags
+p.ET.jags2
 
 p.HPD.c
 p.HPD.jags2
 
+res.dat <- data.frame('ET2.5'=p.ET.jags2[1,],
+                      'ET97.5'=p.ET.jags2[2,],
+                      'HPD2.5'=p.HPD.jags2[,1],
+                      'HPD97.5'=p.HPD.jags2[,2])
 
+row.names(res.dat)[c(1:4,25)] <- c("$\\beta_{1}$","$\\beta_{2}$","$\\beta_{3}$","$\\beta_{4}$","$\\sigma$")
+row.names(res.dat)[c(7:23)] <- paste("$p_{",seq(1:17),"}$",sep='')
+
+my.colors <- c('white',rep('purple',2),rep('yellow',2))
+
+kbl(res.dat,col.names = NULL,caption = '95% CI', bold=T, align=rep('c', 5)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  add_header_above(c(" ", "2.5%" = 1, "97.5%" = 1, "2.5%" = 1, "97.5%" = 1),
+                   bold = T, background = alpha(my.colors, 0.05), color = 'red') %>%
+  add_header_above(c(" ", "Equal Tail" = 2, "HPD" = 2),
+                   background = alpha(my.colors[c(1:2,4)],0.2), color = 'purple') %>%
+  add_header_above(c(" ", "Credibility Intervals" = 4), bold = T, background = 'white',
+                   color = 'red') %>%
+  column_spec(c(2,3), background = alpha(my.colors[2], 0.05)) %>%
+  column_spec(c(4,5), background = alpha(my.colors[4], 0.2)) 
+
+
+#column_spec(1, bold=T,width = "30em")
 
 
 # (6) Frequentest Approach ------------------------------------------------
@@ -880,3 +975,13 @@ paste("SD Lower Bound:", round(quantile(sd.output, c(0.025)),3),
 
 
 
+
+
+par(mfrow=c(1,3))
+hist(congo$GAM)
+hist(congo$stunted_growth)
+hist(congo$malnutrition_among_FeFAs)
+
+plot(congo$GAM, congo$total_deaths)
+plot(congo$stunted_growth, congo$total_deaths)
+plot(congo$malnutrition_among_FeFAs, congo$total_deaths)

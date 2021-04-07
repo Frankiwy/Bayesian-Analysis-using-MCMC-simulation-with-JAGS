@@ -70,7 +70,6 @@ library(viridis)
 library(coda)
 library(corrplot)
 
-
 dir.create("images", showWarnings = TRUE) # directory to images
 dir.create("images/model1", showWarnings = TRUE) # directory to images
 dir.create("images/model2", showWarnings = TRUE) # directory to images
@@ -293,7 +292,7 @@ dat_summary <- dat %>% kbl(
   caption='Table 1: Categorical Variables Summary Table:') %>%
   kable_paper(bootstrap_options = "striped", full_width = F,
               html_font = "Cambria") %>%
-  row_spec(0, background = "orchid", bold=T, color = 'black')
+  row_spec(0, background = alpha("orchid",.2), bold=T, color = 'black')
 dat_summary
 ```
 ### <span style="color: CornflowerBlue;"> 1.1) Graphic Representation </span>
@@ -598,17 +597,35 @@ p.hat.jags
 
 Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
 
-__Equal Tail Intervals: __
+__Equal Tail Intervals & HPD Intervals: __
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 cred <- 0.95
 p.ET.jags <- apply(chainMat, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
-p.ET.jags
+
+p.HPD.jags <- HPDinterval(as.mcmc(chainMat))
+
 ```
 
-__HPD Intervals: __
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
-p.HPD.jags <- coda::HPDinterval(as.mcmc(chainMat))
-p.HPD.jags
+
+res.dat <- round(data.frame('ET2.5'=p.ET.jags[1,],
+                      'ET97.5'=p.ET.jags[2,],
+                      'HPD2.5'=p.HPD.jags[,1],
+                      'HPD97.5'=p.HPD.jags[,2]),4)
+row.names(res.dat)[2] <- "$p$"
+
+my.colors <- c('white',rep('royalblue',2),rep('yellow',2)) # set colors
+
+kbl(res.dat,col.names = NULL,
+    caption="     95% Intervals:") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  add_header_above(c(" ", "Lower" = 1, "Upper" = 1, "Lower" = 1, "Upper" = 1),
+                   bold = T, background = alpha(my.colors, 0.05), color = 'red') %>%
+  add_header_above(c(" ", "Equal Tail" = 2, "HPD" = 2),
+                   background = alpha(my.colors[c(1:2,4)],0.05), color = 'black') %>%
+  column_spec(c(2,3), background = alpha(my.colors[2], 0.05)) %>%
+  column_spec(c(4,5), background = alpha(my.colors[4], 0.05)) 
+
 ```
 
 ## <span style="color: purple;"> 2)  Model 2 </span>
@@ -622,6 +639,10 @@ In order to understand which variables can actually better explain the variabili
 # (1) Code to plot HEATMAP
 
 Cor = cor(congo[unlist(lapply(congo, is.numeric))])
+#change col and row names just for readability 
+v.names <- c('tot.cases','tot.deaths','tot.cured','pop','MAS','MAM','GAM','STG','FeFA')
+colnames(Cor) <- v.names
+rownames(Cor) <- v.names
 corrplot(Cor, type="upper", method="ellipse", tl.pos="d")
 corrplot(Cor, type="lower", method="number", col="black", 
          add=TRUE, diag=FALSE, tl.pos="n", cl.pos="n")
@@ -739,13 +760,21 @@ est.probs <- rep(1,N)
 for (n in 1:nrow(congo)) est.probs[n] <- exp_comp(congo$GAM[n],congo$stunted_growth[n],congo$malnutrition_among_FeFAs[n])
 
 X = round(cbind('est.probs'=est.probs, 'JAGS.probs' = pm_coeff[7:23]),4)
-X
+X <- data.frame(X)
+X <- data.frame(t(X))
+colnames(X) <- paste("$p_{",seq(1:17),"}$",sep='')
+
+X %>% kbl() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = F) %>%
+  row_spec(0, background = alpha("orchid",0.2), color = 'black') %>%
+  column_spec(1, bold=TRUE) %>%
+  scroll_box(width = "830px") 
 
 ```
 
 #### <span style="color: turquoise;"> 2.2.1) TracePlot & Gelman-Rubin </span>
 
-As it has been done in [Section 2.2](#Out1.2), in order to check if the chains has reached the stationary, different diagnostics also here have been performed.
+As it has been done in [Diagnostic for Model 1](#Out1.2), in order to check if the chains has reached the stationary, different diagnostics also here have been performed.
 Also here it is required to extrapolate the __sims.array__ from the __JAGS Output__ in order to move on.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
@@ -798,17 +827,31 @@ coda.fit2 <- as.mcmc(mod.fit2)
 gelman.plot(coda.fit2[,c(1:4)])
 ```
 
-It is also possible to take a look at the __Gelman-Rubin Plot__ for the estimated probabilities $p_{i}$ by __FIgure 13__:
+It is also possible to take a look at the __Gelman-Rubin Plot__ for the estimated probabilities $p_{i}$ by __FIgure 13__. As can be seen from the animated image, not all the estimated probabilities reached the convergence after $6000$. Some of them required more time.
 
 ![Figure 13: __Gelman-Rubin Plot for $p_{i}$__](images/Gelman_Rubin_plot.gif)
 
 #### <span style="color: turquoise;"> 2.2.2) Autocorrelation </span>
 
-We cannot only rely on the stationarity, we need also here to check autocorrelation. In order to take a look at the the values of the autocorrelation values them selves by using the autocorr.diag() function in coda. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. As it possible to see from the output below for the coefficients $\beta_{s}$ and estimated $p_{i}$ probabilities the autocorrelation doesn't drop very fast, but it takes some Lags. 
+We cannot only rely on the stationary, we need also here to check autocorrelation. In order to take a look at the the values of the autocorrelation values them selves by using the __autocorr.diag()__ function in coda. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. As it possible to see from the numeric values in the panel below and from __Figure 12__, the autocorrelation for  the coefficients $\beta_{s}$ and estimated $p_{i}$ probabilities doesn't drop very fast, but it takes some more Lags if compared to the previous model. 
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 11: Trace Plot"}
-autocorr.diag(coda.fit2)
+aut.dat <- round(data.frame(autocorr.diag(coda.fit2)),4)
+colnames(aut.dat)[c(1:4,25)] <- c("$\\beta_{1}$","$\\beta_{2}$","$\\beta_{3}$","$\\beta_{4}$","$\\sigma$")
+colnames(aut.dat)[c(7:23)] <- paste("$p_{",seq(1:17),"}$",sep='')
+
+aut.dat[,c(1:5,7:23,25,24,6)] %>% kbl(caption='Autoccorelation Diagnostic:') %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = F) %>%
+  row_spec(0, background = alpha("orchid",0.2), color = 'black') %>%
+  column_spec(1, bold=T,width = "80px") %>%
+  scroll_box(width = "830px")
 ```
+
+As it has been pointed out in the previous section, Autocorrelation is very import since it assesses how much information is available in each Markov chain. Sampling _1e4_ iterations from a highly correlated Markov Chain yields less information about the stationary distribution than _1e4_ independently draws from the stationary distribution. For that reason, it plays a key rule in calculating the effective sample size in each chain. The __Monte Carlo Effective Sample Size__ tells us how many independent samples from the stationary distribution you should drawn in order to get the same information from our MCMC. 
+
+However, as said in [Diagnostic Model 1 Section](#Out1.2), autocorrelation alone is not enough and needs to be supported by the __Rafery and Lewis diagnostic__ that tells at least how much lower the __Effective Sample Size__ should be in order to build up reliable 95% posterior intervals. These numbers are displayed in the panel below:
+
+
 
 VEDI MODEL 1 PER Raftery and Lewis diagnostic !!!!!!!!!!!!!!!
 
@@ -905,23 +948,42 @@ Let's compute the point estimate for the $p$
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
 
-p.hat.jags <- colMeans(chainMatrix2)
-p.hat.jags
+p.hat.jags2 <- colMeans(chainMatrix2)
+p.hat.jags2
 ```
 
 Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
 
-__Equal Tail Intervals: __
+__Equal Tail & HPD Intervals: __
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 cred <- 0.95
-p.ET.jags <- apply(chainMatrix2, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
-p.ET.jags
+p.ET.jags2 <- apply(chainMatrix2, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+p.HPD.jags2 <- HPDinterval(as.mcmc(chainMatrix2))
 ```
 
-__HPD Intervals: __
+
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
-p.HPD.jags <- coda::HPDinterval(as.mcmc(chainMatrix2))
-p.HPD.jags
+res.dat2 <- data.frame('ET2.5'=p.ET.jags2[1,],
+                      'ET97.5'=p.ET.jags2[2,],
+                      'HPD2.5'=p.HPD.jags2[,1],
+                      'HPD97.5'=p.HPD.jags2[,2])
+
+row.names(res.dat2)[c(1:4,25)] <- c("$\\beta_{1}$","$\\beta_{2}$","$\\beta_{3}$","$\\beta_{4}$","$\\sigma$")
+row.names(res.dat2)[c(7:23)] <- paste("$p_{",seq(1:17),"}$",sep='')
+
+
+my.colors <- c('white',rep('royalblue',2),rep('yellow',2)) # set colors
+
+kbl(round(res.dat2[c(1:5,7:23,25,24,6),],4),col.names = NULL,
+    caption="     95% Intervals:") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  add_header_above(c(" ", "Lower" = 1, "Upper" = 1, "Lower" = 1, "Upper" = 1),
+                   bold = T, background = alpha(my.colors, 0.05), color = 'red') %>%
+  add_header_above(c(" ", "Equal Tail" = 2, "HPD" = 2),
+                   background = alpha(my.colors[c(1:2,4)],0.05), color = 'black') %>%
+  column_spec(c(2,3), background = alpha(my.colors[2], 0.05)) %>%
+  column_spec(c(4,5), background = alpha(my.colors[4], 0.05)) %>%
+  scroll_box(height = "400px")
 ```
 
 
@@ -948,29 +1010,23 @@ The DIC is then computed:
 
 $DIC = D(\hat{\theta})- 2 p_{D}$
 
-```{r}
-paste("Model 1 DIC:",round(mod.fit$BUGSoutput$DIC,digits = 3),'         ',"Model 2 DIC",round(mod.fit2$BUGSoutput$DIC,digits = 3))
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, results = 'asis'}
+
+cat(
+  paste("- `", "Model 1 DIC: ",round(mod.fit$BUGSoutput$DIC, 3), "`"),
+  paste("- `", "Model 2 DIC: ",round(mod.fit2$BUGSoutput$DIC, 3), "`"),
+  sep='\n'
+)
+
 ```
-Looking at the DIC values, it is clearly shown that there is a significant diffence among them. And in fact the difference is equal to:
+<br><br>
 
-```{r}
-paste("DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BUGSoutput$DIC),digits = 3))
+Looking at the DIC values, it is clearly shown that there is a significant difference among them. And in fact the difference is equal to:
+
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, results = 'asis'}
+cat(paste("`", "DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BUGSoutput$DIC),3),"`"))
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<br><br><br><br>
 
 
 ## <span style="color: green;"> Appendix A</span> {#A}

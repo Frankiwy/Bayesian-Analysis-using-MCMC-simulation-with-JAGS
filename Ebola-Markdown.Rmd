@@ -52,9 +52,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## <span style="color: purple;"> Useful libraries & functions</span>
 
-In this preliminary section have been reported all the used external libraries and some useful functions used to accomplish the outbreak.
+In this preliminary section it has been reported all the used external libraries and some useful functions used to accomplish the outbreak.
 
 ```{r include=TRUE, message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
+# Import libraries
 library(readr)
 library(readxl)
 library(dplyr)
@@ -70,7 +71,7 @@ library(viridis)
 library(coda)
 library(corrplot)
 library(animation)
-
+# Create working directories used to store images
 dir.create("images", showWarnings = TRUE) # directory to images
 dir.create("images/model1", showWarnings = TRUE) # directory to images
 dir.create("images/model2", showWarnings = TRUE) # directory to images
@@ -80,9 +81,9 @@ The __fix.NA()__ function is the function used to perform a pre-processing on th
 
 * _dataset_ = is the dataframe to be "cleaned"
 
-* _first_ = is the column on which NAs values as to be searched and approximated
+* _first_ = is the column on which NAs values has to be searched and approximated
 
-* _second_ = it is an optional variable used to infer the _first_ variable if they are correlated.
+* _second_ = is an optional variable used to infer the _first_ variable if they are correlated.
 ```{r include=TRUE, message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
 fix.NA <- function(dataset,first,second=NA){
   candidate <- which(is.na(dataset[first])) # get vector of positions
@@ -119,7 +120,7 @@ fix.NA <- function(dataset,first,second=NA){
 }
 ```
 
-The __fix.NA.2()__ is another function used to perform data cleaning and infer NAs. It takes in input three parameters:
+The __fix.NA.2()__ is another function used to perform data cleaning and infer NAs on second dataframe. It takes in input three parameters:
 
 * _dataset_ = the dataset to be processed,
 
@@ -149,7 +150,7 @@ fix.NA.2 <- function(dataset,col.name,method='median'){
 }
 ```
 
-The __saving()__ function is used to save the images. It takes in input 4 parameters:
+The __saving()__ function has been used to save the images. It takes in input 4 parameters:
 
 * _name_ = the name of the image,
 
@@ -167,7 +168,7 @@ saving <- function(name,the.figure,w,h){
 ```
 
 ## <span style="color: purple;"> Data Description </span>
-The dataset used to perform the Bayesian Analysis comes from the combination of two files scraped on the web. In particular, the two original dataset are described as follow:
+The dataset used to perform the Bayesian Analysis comes from the combination of two files scraped on the web. In particular, the two original datasets are described as follow:
 
 * __Ebola datatset:__ contains information about Ebola cases occurred in the Democratic Republic of Congo (DRC). The data have been collected by the reported published by DRC Ministry of Health from 22 August 2018 to 22 September 2019. The data are public available on the HUMANITARIAN DATA EXCHANGE (HDX) at the following link: [Ebola Cases and Deaths Outbreak in DRC](https://data.humdata.org/dataset/ebola-cases-and-deaths-drc-north-kivu)) 
 
@@ -237,10 +238,10 @@ The datasets contain different information about the Ebola epidemic and Malnutri
   * _Ituri_,
   * _South Kivu_.
 <br><br>
-* __health_zone__ = it gives information about the sub-area. In every macro-area there are different sup-areaS; more precisely:
-  * for _North Kivu_ region there are 9 sup-areaS,
-  * for _Ituri region_ there are 7 sup-areaS,
-  * for _South Kivu_ region there are 1 sup-areaS.
+* __health_zone__ = it gives information about the sub-area. In every macro-area there are different sup-areas; more precisely:
+  * for _North Kivu_ region there are 9 sup-areas,
+  * for _Ituri region_ there are 7 sup-areas,
+  * for _South Kivu_ region there are 1 sup-areas.
 <br>
 * __total_cases__ = the number of total cases in each sub-area.
 
@@ -248,24 +249,25 @@ The datasets contain different information about the Ebola epidemic and Malnutri
 
 * __total_cured__ = number of recovered people.
 
-* __postecode__ = it is the post code of every _healt_zone_
+* __postecode__ = is the post code of every _healt_zone_
 
-* __population_estimate__ = it is the estimate of the population in 2018-2019
+* __population_estimate__ = is the estimate of the population in 2018-2019
 
-* __MAM__ = it stands for "Moderate Acute Malnutrition" and it describe the degree of malnutrition in children from 6 to 59 months of age defined as _Moderate Wasting_ (i.e. weight-for-height between –3 and –2 Z-scores of the WHO Child Growth Standards median) and/or mid-upper-arm circumference (MUAC) greater or equal to 115 mm and less than 125 mm [(World Health Organization)](https://www.who.int/elena/titles/food_children_mam/en/). 
+* __MAM__ = stands for "Moderate Acute Malnutrition" and it describes the degree of malnutrition in children from 6 to 59 months of age defined as _Moderate Wasting_ (i.e. weight-for-height between –3 and –2 Z-scores of the WHO Child Growth Standards median) and/or mid-upper-arm circumference (MUAC) greater or equal to 115 mm and less than 125 mm [(World Health Organization)](https://www.who.int/elena/titles/food_children_mam/en/). 
 
-* __MAS__ = it stands for "Macrophage activation syndrome" and it is a severe, potentially life-threatening, complication of several chronic rheumatic diseases of childhood. It occurs most commonly with systemic-onset juvenile idiopathic arthritis (SoJIA) [(MAS-Wikipedia)](https://en.wikipedia.org/wiki/Macrophage_activation_syndrome).
+* __MAS__ = stands for "Macrophage activation syndrome" and it is a severe, potentially life-threatening, complication of several chronic rheumatic diseases of childhood. It occurs most commonly with systemic-onset juvenile idiopathic arthritis (SoJIA) [(MAS-Wikipedia)](https://en.wikipedia.org/wiki/Macrophage_activation_syndrome).
 
 * __GAM__ =  Global Acute Malnutrition (GAM) is a measurement of the nutritional status of a population that is often used in protracted refugee situations. Along with the Crude Mortality Rate, it is one of the basic indicators for assessing the severity of a humanitarian crisis [(GAM-Wikipedia)](https://en.wikipedia.org/wiki/Global_Acute_Malnutrition). 
 
 * __stunted_growth__ = Stunting is the impaired growth and development that children experience from poor nutrition, repeated infection, and inadequate psychosocial stimulation. Children are defined as stunted if their height-for-age is more than two standard deviations below the WHO Child Growth Standards median [(World Health Organization)](https://www.who.int/news/item/19-11-2015-stunting-in-a-nutshell).
 
-* __malnutrition_among_FeFAs__ = It stands for "Iron(Fe) for Adolescence" and it is a new indicator to address malnutrition among adolescents. Iron deficiency anemia is a major cause of morbidity and mortality. [(Fe-Wikipedia)](https://en.wikipedia.org/wiki/Iron-deficiency_anemia).
+* __malnutrition_among_FeFAs__ = stands for "Iron(Fe) for Adolescence" and it is a new indicator to address malnutrition among adolescents. Iron deficiency anemia is the major cause of mortality. [(Fe-Wikipedia)](https://en.wikipedia.org/wiki/Iron-deficiency_anemia).
 
 Summaries of the kept categorical variables are reported in Table 1.
 
 The code below has been used to merge the two data frames: _congo_ and _malnutrition_
 ```{r include=TRUE, attr.output='style="max-height: 100px;"', message=FALSE, eval=TRUE, class.source="bg-success", warning=FALSE}
+#perform the join
 congo <- left_join(congo, malnutrition, by = "health_zone")
 
 ### find NAs and infer them using group median:
@@ -290,15 +292,15 @@ dat <- data.frame('Var'=c('total cases','total deaths','total cured', 'MAS',
                   'Q3.'=c(5562,1711,1482, 3.40, 5.10, 10.20, 55.20, 1.30,264633),
                   'Max.'=c(8889,4403,7146, 6.10, 10.90, 14.30, 72.40, 1.30,462362))
 dat_summary <- dat %>% kbl(
-  caption='Table 1: Categorical Variables Summary Table:') %>%
+  caption='Table 1: Summary Numerical Variables:') %>%
   kable_paper(bootstrap_options = "striped", full_width = F,
               html_font = "Cambria") %>%
   row_spec(0, background = alpha("orchid",.2), bold=T, color = 'black')
 dat_summary
 ```
-### <span style="color: CornflowerBlue;"> 1.1) Graphic Representation </span>
+### <span style="color: CornflowerBlue;"> Graphic Representation </span>
 
-The code reported has been used to generate __Figure 1__, that shows shows a graphic representation of the 3 numerical variables: _total_cases, total_deaths and total_cured_. 
+The code reported has been used to generate __Figure 1__,that shows a graphic representation of 2 numerical variables: _total_cases, and total_deaths _. 
 The _group.colors_ variable has been used to manually set the colors of the histograms in order to make the understanding easier. 
 
 ```{r include=TRUE, eval=FALSE, class.source="bg-success", warning=FALSE}
@@ -412,19 +414,19 @@ saving('images/death_cases_histogram.jpg',annotaded_fi,w=900,h=556)
 
 ## <span style="color: purple;"> 1)  Model 1 </span>
 
-In this first model independence among each death probabilities has been assumed among each sub-area. In order to model the outcome, a Binomial distribution has been used. The total number of infected people per each sub area $i$ as been denoted with $n_{i}$. The total number of deceased people is represented by $r_{i}$ which is a binary response variable with "true" probability $p$. 
+In this first model, independence among each death probabilities has been assumed among each sub-area. In order to model the outcome, a Binomial distribution has been used. The total number of infected people per each sub area $i$ has been denoted with $n_{i}$. The total number of deceased people is represented by $r_{i}$ which is a binary response variable with "true" probability $p$. 
 
 \[r_i \sim Binomial(p,n_i) \] 
 
-A $Beta(0.5,0.5)$ distribution as been used as standard-non-informative prior for $p$. The Beta distribution is a continuous distribution taking values in the domain 0-1.
+A $Beta(0.5,0.5)$ distribution has been used as standard-non-informative prior for $p$. The Beta distribution is a continuous distribution taking values in the domain $0-1$ with two shape parameters $(\alpha, \beta) \in \mathbb{R}^{+}\times\mathbb{R}^{+}$.
 
-\[p_i \sim Beta(0.5, 0.5) \] 
+\[p \sim Beta(0.5, 0.5) \] 
 
-In order to make inference on the $p$ the model has been written in order to be compatible for JAGS (Just Another Gibbs Sampler).
+In order to make inference on the $p$ the model has been written to be compatible in JAGS (Just Another Gibbs Sampler).
 
 ### <span style="color: CornflowerBlue;"> 1.1) JAGS Model 1 </span>
 
-Since JAGS does not deal with dataframes it is necessary to store all the required variables into lists.
+Since JAGS does not deal with dataframes it has been necessary to store all the required variables into lists.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 n <- congo$total_cases # tries 
@@ -463,7 +465,7 @@ mod.fit <- jags(data = congo.jags,
 mod.fit
 ```
 
-Do we rely on these output? In order to check it, it is possible to use the Bayesian Conjugate Model:
+Is it possible to rely on this output? Since it is well known the closed form for the posterior, it is possible to use the Bayesian Conjugate Model to double check the output:
 
 \begin{aligned}
  L(r|n,p) &=  {\displaystyle \prod_{i=1}^{17} Bin(r_{i}|n_{i},p)} \\
@@ -486,10 +488,16 @@ beta.star <- alpha+sum(n)-sum(r)
 
 # Point estimation
 p.hat.c <- alpha.star/(alpha.star+beta.star)
-cat(paste("`",'p: ',round(p.hat.c,3),"`"))
+cat(
+  paste("- `", "Conjugate Inference: ",round(p.hat.c,7), "`"),
+  paste("- `", "JAGS Inference: ",0.4621742, "`"),
+  sep='\n'
+)
 ```
 
-One way to check if the MCMC performed on JAGS can be trusted it is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs (this can be performed by going inside the __JAGS output__ and retrieve the __sims.array__ ) and then use different plot representation to inspect sampling behavior and assess convergence.
+Well, the two $p$ are almost the same, so the output returned by JAGS seems to be reasonable. Even thought the probability of death seems to be very high and this is not actually a good discovery.
+
+Now it is the time to control if the MCMC performed on JAGS can be trusted or not. One way is to look at the chains and see if they are stationary (i.e if the simulated parameters are going in a consistent direction). In order to do that, it is necessary to extract the data from model outputs (this can be performed by going inside the __JAGS output__ and retrieve the __sims.array__ ) and then use different plot representation to inspect sampling behavior and assess convergence.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainArray <- mod.fit$BUGSoutput$sims.array # get the chain
@@ -497,11 +505,11 @@ chainArray <- mod.fit$BUGSoutput$sims.array # get the chain
 
 #### <span style="color: turquoise;"> 1.2.1) TracePlot & Gelman-Rubin </span>
 
-A useful diagnostic plot is the trace plot, which actually is a time series plot of the Markov chains. In the trace plot is possible to see the evolution of the parameter vector over the iterations of one or many Markov chains.
-If a chain is stationary, it should showing any long-term trends, meaning that the average value of the chain should be almost flat. Therefore, by looking at the __Figure 2__, it seems so. This means that if we try, for example, to estimate $p$ by using the first 500 iterations we are going to get
-a similar result that we would get if we try to estimate the $p$ by using, for example, iterations from 1000 to 1500. Moreover, it also seems that all the chains explore the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
+A useful diagnostic plot is the trace plot, which actually is a time series plot of the Markov chains. In the trace plot it is possible to see the evolution of the parameter vector over the iterations of one or many Markov chains.
+If a chain is stationary, it should be showing any long-term trends, meaning that the average value of the chain should be almost flat. Therefore, by looking at __Figure 2__, it seems so. This means that if one tries, for example, to estimate $p$ by using the first 500 iterations he/she is going to get
+a similar result that he/she would have got if has tried to estimate the $p$ by using, for example, iterations from 1000 to 1500. Moreover, it also seems that all the chains explore the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 2: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 2: Trace Plot__"}
 
 # this is variable is used to change the aspect of some plots.
 myfacets <-
@@ -517,58 +525,56 @@ mcmc_trace(chainArray, facet_args = list(labeller = ggplot2::label_parsed)) +
 ```
 
 However, since the plot is still too confused, it could help our diagnostic to have a closer look at it by using the _"window"_ parameter inside the _"mcmc_trace function"_ and see how every chain behaves. 
-As __Figure 3__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationarity.
+As __Figure 3__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationary.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 3: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 3: Trace Plot__"}
 mcmc_trace(chainArray, pars = "p", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 ```
 
 Since __Trace PLots__ provide an informal diagnostic about the 
-convergence of the chains, we could rely on a better diagnostic called
+convergence of the chains, it is better to rely on another diagnostic called
 __Gelman & Rubin diagnostic__. This diagnostic calculates the variability
-within/inside the chains and compares that to the variability between the
+within the chains and compares that to the variability between the
 chains [(Gelman & Rubin)](https://blog.stata.com/2016/05/26/gelman-rubin-convergence-diagnostic-using-multiple-chains/).
-We can actually compute this diagnostic by calling the __gelman.diag()__ funciton
-implemented in __coda library__. The __Potential Scale Factor__ is the 
-statistics that tells us about the chain convergence should be close to 1.
-Values faraway from 1 indicates that the chains haven't reached yet convergence.
+The diagnostic can be computed by calling the __gelman.diag()__ function
+implemented in the __coda library__. The __Potential Scale Factor__ is the 
+statistics that tells about the chain convergence. The closer it is to 1 the better the convergence is.
+Values faraway from 1 indicate that the chains haven't reached yet convergence.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 coda.fit <- as.mcmc(mod.fit)
 gelman.diag(coda.fit)
 ```
-As we can see, the chains reached convergence since this value is 1.
-We can also plot this diagnostic by using the __gelman.plot()__ function.
-It shows how the "_shrinkage_ factor" changes once we add iterations to the chains. As we can see, after $6000$ we are almost sure to have reached convergence.
+As it possible to see from the above output, the chains reached convergence since this value is 1.
+It is also possible to plot this diagnostic by using the __gelman.plot()__ function.
+It shows how the "_shrinkage factor_" changes once iterations are added to the chains. As can be seen, after $6000$ we are almost sure to have reached convergence.
 
-
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 4: Gelman-Rubin Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 4: Gelman-Rubin Plot__"}
 gelman.plot(coda.fit)
 ```
 
 #### <span style="color: turquoise;"> 1.2.2) Autocorrelation </span>
 
-Another relevant diagnostic analysis can be done by checking the autocorrelation plots.Autocorrelation is number between -1 and 1 and it measures how "_linearly_ dependent" the current value of the chains are to past values (== Lags). See [Appendix A](#A) for autocorrelation explanation.
+Another relevant diagnostic analysis can be done by checking the autocorrelation plots. Autocorrelation is number between -1 and 1 and it measures how "_linearly dependent_" the current values of the chains are to past values (== Lags). See [Appendix A](#A) for autocorrelation explanation.
 
 For example the $0^{th}$ lag as a perfect Autocorrelation with itself (==1).
-Instead, with the $1_{st}$ lag it has a value of around 0.5 or slightly more. And, as we go further and further, the values become less correlated. We can also take a look at the values of the autocorrelation values them selves by using the __autocorr.diag()__ function in __coda__. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. 
+Instead, with the $1^{st}$ lag it has a value of around 0.5 or slightly more. And, as we go further and further, the values become less correlated. We can also take a look at the values of the autocorrelation by using the __autocorr.diag()__ function in __coda__. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. 
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 autocorr.diag(coda.fit)
 ```
 
-In fact, by calling the previous function we see that at the $5_{th}$ lag the autocorrelation for $p$ already goes to zero.
+In fact, by calling the previous function we see that at the $5^{th}$ lag the autocorrelation for $p$ already goes to zero.
 Autocorrelation is very important because it tells us how much information is available in each Markov chain. Sampling $1e4$ iteration from a highly correlated Markov chain yields less information about the stationary distribution than we would obtain from $1e4$ independently drawn from the stationary distribution.
 
-Autocorrelation is very important when we go to calculate the __effective sample size__ in the chain. The Monte Carlo __effective sample size__ tells us how many independent samples from the stationary distribution you should drawn in order to get the same information from our MCMC. I.e. it is the 
-sample size that we have kept from the Monte Carlo. __Figure 5__ shows the autocorrelation for all the three chains. As can be seen from the figures, the autocorrelation drops pretty fast to zero (after only few lags, 2-3) meaning that there is not autocorrelation among different values in the chains. This is
-possible since JAGS already drops-auto autocorrelated samples by performing jumps. In fact, the effective sample size for $p$ is not $1e4$ but lower. But how much lower? in the __coda package__ there is the function called __effectiveSize()__ which tells us the effective sample size. In this case, for $p$ is of $5400$. Is this number big enough to create reliable 95% posterior intervals ? In order to now that we can rely on the __Raftery and Lewis diagnostic__  (also implemented in the __coda package__) that tells us how many iterations in our chain we need in order to be 95% confident that we are estimating the $0.025$ quantile  of the distribution to an accuracy of $0.005$. In this case we need $4022$ so, we are good enough.
+Autocorrelation is very important when we go to calculate the __effective sample size__ in the chain. The Monte Carlo __effective sample size__ tells us how many independent samples from the stationary distribution you should drawn in order to get the same information from the MCMC. i.e. it is the 
+sample size that we have kept from the Monte Carlo. __Figure 5__ shows the autocorrelation for all the three chains. As can be seen from the figures, the autocorrelation drops pretty fast to zero (after only few lags, 2-3) meaning that there is not autocorrelation among different values in the chains. In fact, the effective sample size for $p$ is not $1e4$ but lower. But how much lower? In the __coda package__ there is the function called __effectiveSize()__ which tells us the effective sample size. In this case, for $p$ is of $5400$. But from where does it come from? Well, every chain has been run for $1e4$ iterations but the first $1000$ have been burned (since chains can start from a point which is very far away from the expected value of the posterior estimate) so per each chain there are $9000$. However, in order to reduce autocorrealtion the __n.thin__ parameter has been set to $=5$ meaning that only 1 simulation out of 5 is taken. So $\frac{9000}{5}=1800 *3=5400$. However, is this number big enough to create reliable 95% posterior intervals? In order to know that, we can rely on the __Raftery and Lewis diagnostic__  (also implemented in the __coda package__) that tells us how many iterations in our chain we need in order to be 95% confident that we are estimating the $0.025$ quantile of the distribution to an accuracy of $0.005$. In this case we need $4022$ therefore, we are good enough.
 
-It is possible to visualize the autocorrelation by calling the __mcmc_acf__ function. This function shows the autocorrelation for each Markov chain separately up to a user-defined number of lags. What is expected is to see a low autocorrelation since it is a signal of convergence. As it possible to see from the __Figure 5__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
+It is possible to visualize the autocorrelation by calling the __mcmc_acf()__ function. This function shows the autocorrelation for each Markov chain separately up to a user-defined number of lags. What is expected is to see a low autocorrelation since it is a signal of convergence. As it is possible to see from __Figure 5__, the autocorrelation function drops to 0 pretty fast after only a couple of lags.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 5: Autocorelation Plots"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 5: Autocorelation Plots__"}
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink") # set color
 
@@ -581,7 +587,7 @@ mcmc_acf(chainArray, facet_args = list(labeller = ggplot2::label_parsed))+
 
 Another diagnostic  analysis can be done by taking a look at the plots of estimated density of the parameters and of the deviance, where density plots are just smoothed histograms of the samples. These are shown in __Figure 6__ reported here below.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 6: Density Overlay Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 6: Density Overlay Plot__"}
 # (3) mcmc_density
 color_scheme_set("pink")
 myfacets <-
@@ -611,23 +617,23 @@ ggarrange(chain_p, chain_dev,
 
 ### <span style="color: CornflowerBlue;"> 1.3) Credibility Intervals Model 1 </span>
 
-Let's compute the point estimate for the $p$
+Let's compute the point estimate for the $p$.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
-chainMat <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
+chainMatrix <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
 
-p.hat.jags <- colMeans(chainMat)
+p.hat.jags <- colMeans(chainMatrix)
 p.hat.jags
 ```
 
-Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
+Now these results can be used to compute _Credibility Intervals_, both equal tails and HPD (Highest Posterior Density).
 
 __Equal Tail Intervals & HPD Intervals: __
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 cred <- 0.95
-p.ET.jags <- apply(chainMat, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+p.ET.jags <- apply(chainMatrix, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
 
-p.HPD.jags <- HPDinterval(as.mcmc(chainMat))
+p.HPD.jags <- HPDinterval(as.mcmc(chainMatrix))
 
 ```
 
@@ -642,7 +648,7 @@ row.names(res.dat)[2] <- "$p$"
 my.colors <- c('white',rep('royalblue',2),rep('yellow',2)) # set colors
 
 kbl(res.dat,col.names = NULL,
-    caption="     95% Intervals:") %>%
+    caption="Table 2: 95% Credibility Intervals:") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
   add_header_above(c(" ", "Lower" = 1, "Upper" = 1, "Lower" = 1, "Upper" = 1),
                    bold = T, background = alpha(my.colors, 0.05), color = 'red') %>%
@@ -655,9 +661,9 @@ kbl(res.dat,col.names = NULL,
 
 ## <span style="color: purple;"> 2)  Model 2 </span>
 
-In Model 1 it has been assumed that the true death probabilities are independent for each sub-area however, this is actually not too realistic. In fact, it is better to assume dependence among them and that they could be similar in some ways. For that reason a more realist _Statistical Model_ has been implemented to describe present behavior and/or predict future performances. The model is composed by three ingredients: Density outcome ($r_{i} \sim Bin(n_{i},p_{i})$), a linear predictor ($\eta(x)$) and link function ($g(n(x))$). In this specific scenario a Generalized Linear Model (GLM), which is an extension of the Normal Linear Regression Model based on exponential family distributions. Since it has been used a Binomial distribution this model is hence suitable for this kind of analysis.
+In Model 1 it has been assumed that the true death probability is equal for all sub-areas; however, this is actually not too realistic. In fact, it is better to expect that the probability of death could change in each sub-area since the effect of different covariates could have different impacts. For that reason a more realist _Statistical Model_ has been implemented to describe present behaviors and/or predict future performances. The model is composed by three ingredients: Density outcome ($r_{i} \sim Bin(n_{i},p_{i})$), a linear predictor ($\eta(x)$) and link function ($g(n(x))$). In this specific scenario a Generalized Linear Model (GLM), which is an extension of the Normal Linear Regression Model based on exponential family distributions has been used. 
 
-In order to understand which variables can actually better explain the variability of the dependent variable the Pearson Correlation Coefficient has been computed among all the Numerical variables and the results are returned by __Figure 8__:
+In order to understand which variables can actually better explain the variability of the dependent variable the Pearson Correlation Coefficient has been computed among all the Numerical variables and the results are returned by __Figure 8__. 
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 8: Heatmap"}
 
@@ -674,8 +680,10 @@ corrplot(Cor, type="lower", method="number", col="black",
 ```
 <br><br>
 
-As it is possible to see from figure above, three variables seems to be more influent in explaining the variance of the dependent variable: __"GAM", "stunned_growth" and "malnutrition_among_FeFAs"__. However, once could ask why neither __MAM__ nor __MAS__ have been included in the model since they are both highly negatively correlated with __total_deaths__. This is due to the fact that they actually are strongly correlated with the __GAM__ variable (respectively 0.84 and 0.88) meaning that, these features, combined together do not add significantly information regarding the dependent variable but they 
+As it is possible to see from figure above, three variables seem to be more influent in explaining the variance of the dependent variable: __"GAM", "stunned_growth" and "malnutrition_among_FeFAs"__. However, one could ask why neither __MAM__ nor __MAS__ have been included in the model since they are both highly negatively correlated with __total_deaths__. This is due to the fact that they actually are strongly correlated with the __GAM__ variable (respectively 0.84 and 0.88) meaning that, these features, combined together do not add significantly information regarding the dependent variable but they 
 actually only contribute to make the model more complex. For that reason only __GAM__ has been included since it has a stronger correlation with the dependent variable compared to the other two.
+
+To be more precise, it is actually better to check at the $R^{2}$ (which is the square of the correlation) to have an understanding and to interpret the Pearson coefficient. In fact the $R^{2}_{GAM} \approx 0.19$ meaning that $19%$ of the variance of the dependent variable (__total_deaths__) is explained by __GAM__. It is possible to say the same for the other two considered independent variables, $R^{2}_{STG} = 0.25$ and $R^{2}_{FeFA} = 0.03$.
 
 Hence, the structure of the model is:
 
@@ -685,7 +693,7 @@ Hence, the structure of the model is:
  \beta_{1}GAM_{i} + \beta_{2}STG_{i} + \beta_{3}pop_{i},\\
  &for \;\; i = 1,2,...,n\label{eq:2}\\
  \\
- \beta_{i} &\sim Normal(\mu,\tau)
+ \beta_{j} &\sim Normal(\mu,\tau)
 \end{aligned}
 
 __or in odds notation:__
@@ -698,7 +706,7 @@ odds_{i} &= \frac{p_{i}}{1-p_{i}} \\
 \log(odds_{i}) &= \beta_{0} + \beta_{1}GAM_{i} + \beta_{2}STG_{i} + \beta_{3}pop_{i}
 \end{aligned}
 
-Standard-non-informative priors are specified both for population mean (logit) probability of death ($\mu$) and precision($\tau$).
+Standard-non-informative priors have been used for both ($\mu$) and precision($\tau$) which are the two latent variables of the $\beta_{j}$ coefficients.
 
 \begin{aligned}
 \mu &\sim Normal(0, 10^{-6})\\
@@ -758,16 +766,16 @@ mod.fit2 <- jags(data = congo.jags2,
 mod.fit2
 ```
 
-As can be seen from the JAGS output, all the four $\beta_{s}$ parameters seems to be approximately normal (as shown in __Figure 13__) with a very low variance and different from zero. This means that they should be reliable and have actually an impact on estimating the probability of death.
+As can be seen from the JAGS output, all the four $\beta_{s}$ parameters seem to be approximately normal (as shown in __Figure 13__) with a very low variance and positive. This was expected since we think that areas that have high __malnutrition indeces__ should have a higher probability of death. Since it is so, it means that they should be reliable and have actually an impact on estimating the probability of death. 
 
-As it is also possible to seen from the output table returned by JAGS, the estimated death probabilities per each Area quite high. But where are they come from? Since it has been used a Binomial with a prob of success $p_{i}$ and the logit of each $p_{i}$ has been modeled as a linear model, this leads to an exponential form equal to:
+As it is also possible to see from the output table returned by JAGS, the estimated death probabilities per each area are very  high unfortunately; meaning that this was actually a letal desease. But where are they coming from? Since it has been used a Binomial with a prob of success $p_{i}$ and the logit of each $p_{i}$ has been modeled as a linear model, this leads to an exponential form equal to:
 
 \begin{aligned}
   E(y_{i}) &= p_{i} = \frac{e^{\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij}}}{1 +
   e^{\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij}} }
 \end{aligned}
 
-Now, if we invert the _link function_ by dividing the numerator and the denominator by the numerator we get better better expression for the $y_{i}$:
+Now, if we invert the _link function_ by dividing the numerator and the denominator by the numerator we get a better expression for the $y_{i}$ (which is our dependent variable $p_{i}$):
 
 \begin{aligned}
   E(y_{i}) &= \frac{1}{1 + e^{-(\beta_{0} + \sum^{3}_{j=1}\beta_{j}x_{ij)}} } \\
@@ -775,7 +783,7 @@ Now, if we invert the _link function_ by dividing the numerator and the denomina
   E(y_{i}) &= \frac{1}{1 + e^{-(-5.568 + 0.121 \times GAM_{i} + 0.085 \times STG_{i} + 0.292 \times FeFA_{i})} }
 \end{aligned}
 
-Now, if someone substitute each $x_{i}$ with the original values and multiply them by the $\beta_{s}$ coefficinets, the results will be the already seen estimated probabilities of death for each region. This is shown by the table reported below:
+Now, if we substitute each $x_{i}$ with the original values and multiply them by the $\beta_{s}$ coefficients, the results will be the already seen estimated probabilities of death for each region. This is shown by the table reported below:
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 
@@ -791,7 +799,7 @@ X <- data.frame(X)
 X <- data.frame(t(X))
 colnames(X) <- paste("$p_{",seq(1:17),"}$",sep='')
 
-X %>% kbl() %>%
+X %>% kbl(caption = 'Table 3: $p_{i}$') %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),full_width = F) %>%
   row_spec(0, background = alpha("orchid",0.2), color = 'black') %>%
   column_spec(1, bold=TRUE) %>%
@@ -801,16 +809,16 @@ X %>% kbl() %>%
 
 #### <span style="color: turquoise;"> 2.2.1) TracePlot & Gelman-Rubin </span>
 
-As it has been done in [Diagnostic for Model 1](#Out1.2), in order to check if the chains has reached the stationary, different diagnostics also here have been performed.
+As it has been done in [Diagnostic for Model 1](#Out1.2), in order to check if the chains have reached the stationary, different diagnostics have been performed.
 Also here it is required to extrapolate the __sims.array__ from the __JAGS Output__ in order to move on.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainArray2 <- mod.fit2$BUGSoutput$sims.array # get the chain
 ```
 
-As first, it is always a good starting point to have a look at the __Trace Plots__. It is important to remember that, with this analysis it is possible to see the evolution of the parameter vector over the iterations of the Markov Chains. As shown in __Figure 9__, all the chains, referring to the \betas coefficients, seem to be exploring the same region of parameter values and this can be infer by the fact that all the chains lie on top of each other. So, it seems that all the chains has reached stationary.
+As first, it is always a good starting point to have a look at the __Trace Plots__. It is important to remember that, with this analysis it is possible to see the evolution of the parameter vector over the iterations of the Markov Chains. As shown in __Figure 9__, all the chains, referring to the $\beta_{j}$ coefficients, seem to be exploring the same region of parameter values and this can be inferred by the fact that all the chains lie on top of each other. So, it seems that all the chains have reached stationary.
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 9: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 9: Trace Plot__"}
 # this is variable is used to change the aspect of some plots.
 myfacets <-
   facet_bg(fill = "gray30", color = NA, ) +
@@ -824,44 +832,43 @@ mcmc_trace(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
   myfacets
 
 ```
-It is also possible to take a look at the __Trace Plots__ for the estimated probabilities $p_{i}$ thanks to the __FIgure 10__:
+It is also possible to take a look at the __Trace Plots__ for the estimated probabilities $p_{i}$ thanks to __FIgure 10__:
 
 ![Figure 10: __\bold{$p_{i}$} TracePlot animated GIF__](images/pi_traceplot.gif)
 
-Also here, since the plot is too confused, it could help our diagnostic to have a closer look at it by using the “window” parameter inside the “mcmc_trace function” and see how every chain behaves.
-As __Figure 10__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationary.
+Also here, since the plot is too confused, it could help our diagnostic to have a closer look at it by using the _“window”_ parameter inside the “__mcmc_trace()__ function” and see how every chain behaves.
+As __Figure 11__ shows, it seems that the chains spend substantial time in the same region of the parameter space, sign that they are reaching stationary.
 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 11: Beta Window Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 11: Beta Window Trace Plot__"}
 mcmc_trace(chainArray2, pars = "beta[2]", window = c(300,500),
            facet_args = list(labeller = ggplot2::label_parsed))+
   myfacets
 ```
 
-
-Since Trace PLots provide an informal diagnostic about the convergence of the chains, we could rely on a better diagnostic called __Gelman & Rubin diagnostic__. This diagnostic calculates the variability within/inside the chains and compares that to the variability between the chains (Gelman & Rubin). We can actually compute this diagnostic by calling the gelman.diag() funciton implemented in coda library. The Potential Scale Factor is the statistics that tells us about the chain convergence should be close to 1. Values farway from 1 indicates that the chains haven’t reached yet convergence.
+We want to remind that, since Trace PLots provide an informal diagnostic about the convergence of the chains, we could rely on the better diagnostic called __Gelman & Rubin diagnostic__. We can compute this diagnostic by calling the __gelman.diag()__ function implemented in coda library. We also remind that the __Potential Scale Factor__ is the statistics used to assess convergence (the closer to 1 the better).
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 coda.fit2 <- as.mcmc(mod.fit2)
 gelman.diag(coda.fit2[,c(1:4)])
 ```
 
-As we can see, the chains reached convergence since this value is 1. We can also plot this diagnostic by using the __gelman.plot()__ function. It shows how the _“shrinkage factor”_ changes once we add iterations to the chains.
-As we can see, after $6000$ we are almost sure to have reached convergence.
+As we can see, the chains reached convergence since the values are close to $1$. We can also plot this diagnostic by using the __gelman.plot()__ function. It shows how the _“shrinkage factor”_ changes once we add iterations to the chains.
+As we can see also here, after $6000$ we are almost sure to have reached convergence.
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 12: Gelman-Rubin Plot"}
 gelman.plot(coda.fit2[,c(1:4)])
 ```
 
-It is also possible to take a look at the __Gelman-Rubin Plot__ for the estimated probabilities $p_{i}$ by __FIgure 13__. As can be seen from the animated image, not all the estimated probabilities reached the convergence after $6000$. Some of them required more time.
+It is also possible to take a look at the __Gelman-Rubin Plot__ for the estimated probabilities $p_{i}$ by using  __FIgure 13__. As can be seen from the animated image, not all the estimated probabilities reached the convergence after $6000$. Some of them required more time.
 
 ![Figure 13: __Gelman-Rubin Plot for $p_{i}$__](images/Gelman_Rubin_plot.gif)
 
 #### <span style="color: turquoise;"> 2.2.2) Autocorrelation </span>
 
-We cannot only rely on the stationary, we need also here to check autocorrelation. In order to take a look at the the values of the autocorrelation values them selves by using the __autocorr.diag()__ function in coda. What we expect is that the autocorrelation does not persist for longer once we move forward in the iterations. As it possible to see from the numeric values in the panel below and from __Figure 12__, the autocorrelation for  the coefficients $\beta_{s}$ and estimated $p_{i}$ probabilities doesn't drop very fast, but it takes some more Lags if compared to the previous model. 
+We cannot only rely on the stationary, we need also here to check autocorrelation. In order to take a look at the the values of the autocorrelation the __autocorr.diag()__ function has been used. What we expect to see also here is that the autocorrelation does not persist for longer once we move forward in the iterations. As it is possible to see from the numeric values in the panel below and from __Figure 14__, the autocorrelation for the coefficients $\beta_{s}$ and estimated $p_{i}$ probabilities doesn't drop very fast, but it takes some more lags if compared to the previous model. 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 11: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 14: Trace Plot__"}
 aut.dat <- round(data.frame(autocorr.diag(coda.fit2)),4)
 colnames(aut.dat)[c(1:4,24)] <- c("$\\beta_{1}$","$\\beta_{2}$","$\\beta_{3}$","$\\beta_{4}$","$\\sigma$")
 colnames(aut.dat)[c(7:23)] <- paste("$p_{",seq(1:17),"}$",sep='')
@@ -873,12 +880,12 @@ aut.dat[,c(1:5,7:23,25,24,6)] %>% kbl(caption='Autoccorelation Diagnostic:') %>%
   scroll_box(width = "830px")
 ```
 
-As it has been pointed out in the previous section, Autocorrelation is very import since it assesses how much information is available in each Markov chain. Sampling _1e4_ iterations from a highly correlated Markov Chain yields less information about the stationary distribution than _1e4_ independently draws from the stationary distribution. For that reason, it plays a key rule in calculating the effective sample size in each chain. The __Monte Carlo Effective Sample Size__ tells us how many independent samples from the stationary distribution you should drawn in order to get the same information from our MCMC. 
+As it has been pointed out in the previous section, autocorrelation is very important since it assesses how much information is available in each Markov chain. 
 
-It is possible to visualize the autocorrelation by calling the __mcmc_acf()__ function. This function shows the autocorrelation for each Markov chain separately up to a user-defined number of lags. What is expected is to see a low autocorrelation since it is a signal of convergence.
+It is possible to visualize the autocorrelation by calling the __mcmc_acf()__ function. This function shows the autocorrelation for each Markov chain separately up to a user-defined number of lags. What is expected to see it is a low autocorrelation since it is a signal of convergence.
 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 12: Trace Plot"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 15: Trace Plot__"}
 # (2) mcmc_acf
 color_scheme_set("mix-teal-pink") # set color
 ## (2.1) plot 4 betas
@@ -891,10 +898,10 @@ mcmc_acf(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
 
 #### <span style="color: turquoise;"> 2.2.3) Posterior Distributions </span>
 
-Now, it is reasonable to have a look at the plots of estimated density of the coefficients and estimated probabilities. These are shown in __Figure 13__ reported here below.
+Now, it is reasonable to have a look at the plots of estimated density of the coefficients, the probabilities, the deviance and sigma. These are shown respectively in __Figure 16__, __Figure 17__ and __Figure 18__. What is expected is that both ($\beta_{j}$ and $p_{i}$) follow a normal distribution.
 
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 13: Density Overlay Plot for Betas"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 16: Density Overlay Plot for Betas__"}
 # (3) mcmc_density
 color_scheme_set("pink")
 ## (3.1) plot 4 betas
@@ -908,7 +915,7 @@ mcmc_dens_overlay(chainArray2,par=c("beta[1]","beta[2]","beta[3]","beta[4]"),
 
 ```
 
-```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 14: Density Overlay Plot for Deviance and Sigma"}
+```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "__Figure 17: Density Overlay Plot for Deviance and Sigma__"}
 ## (3.2) plot deviance and sigma
 mcmc_dens_overlay(chainArray2,par=c("deviance","sigma"),
            facet_args = list(labeller = ggplot2::label_parsed)) +
@@ -916,10 +923,11 @@ mcmc_dens_overlay(chainArray2,par=c("deviance","sigma"),
 
 ```
 
-Instead, in the animated figure below it is possible to see the __Density plots__ for the estimated probabilities $p_{i}$:
+<br><br><br><br>
 
-![Figure 15: __$p_{i}$ Density Plot animated GIF__](images/pi_density.gif)
-
+![Figure 18: __$p_{i}$ Density Plot animated GIF__](images/pi_density.gif)
+<br><br><br><br>
+Here below are also reported the posterior distributions with 90% Credibility intervals.
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, fig.cap = "Figure 16: Posterior Density Plots with Medians and Intervals"}
 # (4) areas plot
 
@@ -956,7 +964,7 @@ annotate_figure(fig, top = text_grob(
 
 ### <span style="color: CornflowerBlue;"> 2.3) Credibility Intervals Model 2 </span>
 
-Let's compute the point estimate for the $p$
+Let's compute the point estimates for the $p_{i}$
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
 chainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
@@ -965,7 +973,7 @@ p.hat.jags2 <- colMeans(chainMatrix2)
 p.hat.jags2
 ```
 
-Now these results can be used to compute _Interval Estimation_, both equal tails and HPD (Highest Posterior Density region)
+Now these results can be used to compute _Credibility Intervals, both equal tails and HPD (Highest Posterior Density)
 
 __Equal Tail & HPD Intervals: __
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE}
@@ -1003,7 +1011,7 @@ kbl(round(res.dat2[c(1:5,7:23,25,24,6),],4),col.names = NULL,
 ## <span style="color: purple;"> Model Comparison </span>
 
 
-In order to compare models it is possible to use the DIC (Deviance Information Criterion) metric. DIC is a Bayesian method for model comparison and a measure for the prediction error of a model. The lower DIC value the better the model fits the data. 
+In order to compare models it is possible to use the DIC (Deviance Information Criterion) metric. DIC is a Bayesian method for model comparison and a measure for the prediction error of a model. The lower DIC value the better the model fits the data, [DIC](https://rss.onlinelibrary.wiley.com/doi/pdf/10.1111/1467-9868.00353). 
 
 The deviance D, given a parameter value $\theta$ returns error using the log-likelihood function:
 $D(\theta) = -2  \text{log} * L(data|\theta)$
@@ -1011,7 +1019,7 @@ $D(\theta) = -2  \text{log} * L(data|\theta)$
 Once the posterior means are computed, it is possible to measure the deviance as:
 
 $D(\hat{\theta}) = -2 \text{log} * L(data|\hat{\theta})$
-Taking all steps i in the different MCMCs, it is possible to compute an average - posterior mean of the deviance as follows:
+Taking all $i$ steps in the different MCMCs, it is possible to compute an average - posterior mean of the deviance as follows:
 
 $\hat{D} = \frac{1}{M}\sum^{M}_{i=1}D (\theta_{i})$
 
@@ -1034,12 +1042,12 @@ cat(
 ```
 <br><br>
 
-Looking at the DIC values, it is clearly shown that there is a significant difference among them. For that reason, it is possible to assess that Model 2 is preferable over Model 1. In fact, the DIC difference is equal to:
+Looking at the DIC values, it is clearly shown that there is a significant difference among the models. For that reason, it is possible to assess that Model 2 is preferable over Model 1. In fact, the DIC difference is equal to:
 
 ```{r message=FALSE, include=TRUE, eval=TRUE, class.source="bg-success", warning=FALSE, results = 'asis'}
 cat(paste("`", "DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BUGSoutput$DIC),3),"`"))
 ```
-<br><br><br><br>
+<br><br><br><br><br><br>
 
 
 ## <span style="color: green;"> Appendix A</span> {#A}
@@ -1050,5 +1058,50 @@ cat(paste("`", "DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BU
 
 If the sequence is stationary (as it is), the joint distribution of multiple Xs doesn't change with time shifts, then autocorrelation for two variables doesn't depend on the exact times $t$ and $t-l$ but rather on the distance between them: $l$. This is the reason why the autocorrelation plots are computed in terms of lags. Font: [Autocorrelation](https://d3c33hcgiwev3.cloudfront.net/_dd6d312e631a80339ba1627e1d72b42d_Autocorrelation.pdf?Expires=1617580800&Signature=C0iakoYnGzE7BJ41iur6mM88n5Ep-68RT4-FwiSl01~-NtdzvDKw~qGYDMH~57PeVjb69IxHYwXbAg0JM5i8UGSaIl~euKpQuWpLPqKWm6f-2c4E03xZTqy3kUzuJTAtaBj0VvR59MAt2HZdXCK5kv8Xyy~LonopjZq2f1KGKUQ_&Key-Pair-Id=APKAJLTNE6QMUY6HBC5A)
 
+## <span style="color: green;"> Appendix B</span> {#B}
+
+Here below is reported the code used to create the GIFs and save them:
+
+```{r message=FALSE, include=TRUE, eval=FALSE, class.source="bg-success", warning=FALSE,}
+# DENSITY PLOT GIF
+setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
+color_scheme_set("pink")
+
+saveGIF ({
+  # (3) mcmc_trace
+  for (m in 1:N){
+    plot(mcmc_dens_overlay(chainArray2,par=c(paste("p[",m,"]",sep='')),
+                           facet_args = list(labeller = ggplot2::label_parsed)) +
+           xlab(paste('p',m))) 
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "pi_density.gif")
+
+# GELMAN RUBIN GIF
+
+saveGIF ({
+  # (3) Gelman-Rubin
+  for (m in 1:N){
+    gelman.plot(coda.fit2[,paste("p[",m,"]",sep='')], main=paste('p',m))
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "Gelman_Rubin_plot.gif")
+
+
+# TRACE PLOT GIF
+
+color_scheme_set("mix-brightblue-gray")
+saveGIF ({
+  # (3) mcmc_trace
+  for (m in 1:N){
+    plot(mcmc_trace(chainArray2,par=c(paste("p[",m,"]",sep='')),
+                    facet_args = list(labeller = ggplot2::label_parsed))+
+           ylab(paste('p',m)) ) 
+    Sys.sleep(1)
+  }
+}, ani.height = 400, ani.width =750, movie.name = "pi_traceplot.gif")
+
+
+```
 
 

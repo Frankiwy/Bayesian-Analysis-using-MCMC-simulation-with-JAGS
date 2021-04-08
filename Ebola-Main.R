@@ -398,15 +398,15 @@ saving('images/model1/densityANDintervals_p_and_deviance.png',ggarrange(chain_p,
 
 # (3.3) Credibility Intervals Model 1  --------------------------------------------  
 
-chainMat <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
+chainMatrix <- mod.fit$BUGSoutput$sims.matrix # join the deviance and pi for all the 3 chains
 
-p.hat.jags <- colMeans(chainMat)
-p.hat.jags
+p.hat.jags <- colMeans(chainMatrix)
+p.hat.jags[2]
 
 cred <- 0.95
-p.ET.jags <- apply(chainMat, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
+p.ET.jags <- apply(ChainMatrix, 2, quantile, prob=c((1-cred)/2, 1-(1-cred)/2))
 
-p.HPD.jags <- HPDinterval(as.mcmc(chainMat))
+p.HPD.jags <- HPDinterval(as.mcmc(ChainMatrix))
 
 res.dat <- round(data.frame('ET2.5'=p.ET.jags[1,],
                             'ET97.5'=p.ET.jags[2,],
@@ -489,7 +489,7 @@ mod.fit2
 # (4.3) Get p_{i} estimates from GLM --------------------------------------------
 
 
-chainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # extraxt chains
+ChainMatrix2 <- mod.fit2$BUGSoutput$sims.matrix # extraxt chains
 pm_coeff <- colMeans(chainMatrix2) #posterior mean of the coefficients betas
 
 exp_comp <- function(x1,x2,x3) 1/(1+exp(-(-5.56819741+0.12126469*x1+0.08479912*x2+0.29248419*x3)))
@@ -675,7 +675,6 @@ cat(paste("`", "DIC Difference:", round(abs(mod.fit$BUGSoutput$DIC - mod.fit2$BU
 # (5) Appendix B --------------------------------------------
 
 # DENSITY PLOT GIF
-setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS/images")
 color_scheme_set("pink")
 
 saveGIF ({
@@ -711,7 +710,6 @@ saveGIF ({
     Sys.sleep(1)
   }
 }, ani.height = 400, ani.width =750, movie.name = "pi_traceplot.gif")
-setwd("C:/Users/Francesco/Desktop/Bayesian-Analysis-using-MCMC-simulation-with-JAGS")
 
 
 
